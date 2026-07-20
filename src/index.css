@@ -1,0 +1,166 @@
+@import "tailwindcss";
+
+@theme {
+  --color-salt: #f7edda;
+  --color-golden: #f5a83c;
+  /* Deep burnt rust — dark enough for WCAG AA (4.5:1) as small label text on
+     the cream/shore backgrounds, still unmistakably golden-hour orange. */
+  --color-burnt: #b04218;
+  --color-coral: #e8735c;
+  --color-dusk: #ae4b63;
+  --color-deepset: #14535d;
+  --color-night: #0b3038;
+  --color-seafoam: #9fd3c7;
+  --color-driftwood: #5c3a21;
+  --color-shore: #fae0b8;
+  --color-lagoon: #dcefe9;
+
+  --font-display: "Shrikhand", "Georgia", serif;
+  --font-body: "Karla", "Helvetica Neue", sans-serif;
+  --font-mono: "Space Mono", "Courier New", monospace;
+
+  --animate-marquee: marquee 45s linear infinite;
+  --animate-marquee-fin: marquee 32s linear infinite;
+  --animate-bob: bob 5s ease-in-out infinite;
+  --animate-drift-slow: drift 26s linear infinite;
+  --animate-drift-mid: drift 18s linear infinite;
+  --animate-drift-fast: drift 12s linear infinite;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--color-salt);
+  color: var(--color-driftwood);
+  overflow-x: hidden;
+}
+
+/* Even highlighting copy feels like sunset. */
+::selection {
+  background: var(--color-golden);
+  color: var(--color-salt);
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(2deg);
+  }
+}
+
+@keyframes drift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes foam-wash {
+  0% {
+    transform: translateX(-100%) skewX(-8deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(100vw) skewX(-8deg);
+    opacity: 1;
+  }
+}
+
+@keyframes swell-wave {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(110vw);
+  }
+}
+
+@keyframes seagull-cross {
+  0% {
+    transform: translate(-60px, 0);
+  }
+  50% {
+    transform: translate(50vw, -24px);
+  }
+  100% {
+    transform: translate(105vw, 8px);
+  }
+}
+
+.toast-item {
+  animation: toast-in 0.25s ease-out;
+}
+
+/* Vintage title-card entrance: wide letter-spacing easing tight with a fade-up. */
+.title-card {
+  opacity: 0;
+  transform: translateY(14px);
+  letter-spacing: 0.12em;
+  transition:
+    opacity 0.7s ease-out,
+    transform 0.7s ease-out,
+    letter-spacing 0.9s ease-out;
+}
+
+.title-card.is-in {
+  opacity: 1;
+  transform: translateY(0);
+  letter-spacing: 0em;
+}
+
+/* Tide curve draw-on for the roadmap. */
+.tide-path {
+  stroke-dasharray: 2400;
+  stroke-dashoffset: 2400;
+  transition: stroke-dashoffset 2.2s ease-out;
+}
+
+.tide-path.is-in {
+  stroke-dashoffset: 0;
+}
+
+/* 8mm film grain, one SVG turbulence tile. Static by design: cheap on GPU. */
+.film-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

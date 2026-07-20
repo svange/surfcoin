@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+# There's no alpha in here either.

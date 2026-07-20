@@ -1,0 +1,299 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  surfcoin playground backend: Cognito user pool (managed login, code+PKCE SPA
+  client), DynamoDB single-table store, KMS key for linked API credentials,
+  Lambda API behind an HTTP API with a Cognito JWT authorizer, and a 1-minute
+  EventBridge tick that drives the autopilot rule engine.
+  Deploy in us-east-1 alongside the static site stack.
+
+Parameters:
+  SiteOrigin:
+    Type: String
+    Default: https://surfcoin.aillc.link
+    Description: Primary browser origin of the deployed site.
+  ExtraOrigins:
+    Type: CommaDelimitedList
+    Default: "https://www.surfcoin.aillc.link,https://surf.fail,https://www.surf.fail,http://localhost:5173,http://localhost:37740"
+    Description: Additional allowed origins (future prod domain + local dev).
+  CognitoDomainPrefix:
+    Type: String
+    Default: surfcoin-play-5658
+    Description: Globally unique (per region) Cognito hosted domain prefix.
+
+Resources:
+  # ── Identity ────────────────────────────────────────────────────────────────
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: surfcoin-playground
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      DeletionProtection: INACTIVE
+      MfaConfiguration: "OFF"
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate: [email]
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Ref CognitoDomainPrefix
+      ManagedLoginVersion: 2
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: playground-spa
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs:
+        - !Sub "${SiteOrigin}/playground"
+        - https://surf.fail/playground
+        - https://www.surf.fail/playground
+        - http://localhost:5173/playground
+        - http://localhost:37740/playground
+      LogoutURLs:
+        - !Sub "${SiteOrigin}/playground"
+        - https://surf.fail/playground
+        - https://www.surf.fail/playground
+        - http://localhost:5173/playground
+        - http://localhost:37740/playground
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+
+  ManagedLoginBranding:
+    Type: AWS::Cognito::ManagedLoginBranding
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientId: !Ref UserPoolClient
+      UseCognitoProvidedValues: true
+
+  # ── Data ────────────────────────────────────────────────────────────────────
+  Table:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: surfcoin-playground
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  # Linked trading API keys are small (<4KB) so they are encrypted directly
+  # with KMS — no envelope crypto in application code.
+  CredentialsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Encrypts linked pump.fun / PumpPortal credentials at rest.
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AccountAdmin
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+
+  CredentialsKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/surfcoin-playground
+      TargetKeyId: !Ref CredentialsKey
+
+  # ── API Lambda ──────────────────────────────────────────────────────────────
+  ApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: surfcoin-playground-api
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: playground
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource: !GetAtt Table.Arn
+              - Effect: Allow
+                Action:
+                  - kms:Encrypt
+                  - kms:Decrypt
+                Resource: !GetAtt CredentialsKey.Arn
+
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: surfcoin-playground-api
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      Handler: index.handler
+      MemorySize: 512
+      Timeout: 30
+      Role: !GetAtt ApiRole.Arn
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref Table
+          KMS_KEY_ID: !Ref CredentialsKey
+          SITE_ORIGIN: !Ref SiteOrigin
+      # Placeholder — scripts/deploy-playground.sh uploads the real bundle
+      # with update-function-code right after stack create/update.
+      Code:
+        ZipFile: |
+          exports.handler = async () => ({
+            statusCode: 503,
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ error: "backend bundle not deployed yet" }),
+          });
+
+  # ── HTTP API with Cognito JWT auth ─────────────────────────────────────────
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: surfcoin-playground
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins: !Split
+          - ","
+          - !Join
+            - ","
+            - - !Ref SiteOrigin
+              - !Join [",", !Ref ExtraOrigins]
+        AllowMethods: [GET, POST, PUT, DELETE, OPTIONS]
+        AllowHeaders: [authorization, content-type]
+        MaxAge: 3600
+
+  HttpApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ApiFunction.Arn
+      PayloadFormatVersion: "2.0"
+
+  JwtAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref HttpApi
+      AuthorizerType: JWT
+      Name: cognito
+      IdentitySource:
+        - "$request.header.Authorization"
+      JwtConfiguration:
+        Audience:
+          - !Ref UserPoolClient
+        Issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+
+  DefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "ANY /api/{proxy+}"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${HttpApiIntegration}"
+
+  HttpApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: "$default"
+      AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 50
+        ThrottlingRateLimit: 25
+
+  ApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*"
+
+  # ── Autopilot tick ─────────────────────────────────────────────────────────
+  AutopilotTick:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: surfcoin-playground-autopilot
+      ScheduleExpression: rate(1 minute)
+      State: ENABLED
+      Targets:
+        - Id: api-function
+          Arn: !GetAtt ApiFunction.Arn
+          Input: '{"source":"autopilot-tick"}'
+
+  AutopilotInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AutopilotTick.Arn
+
+Outputs:
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  CognitoDomain:
+    Value: !Sub "https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com"
+  ApiEndpoint:
+    Value: !GetAtt HttpApi.ApiEndpoint
+  TableName:
+    Value: !Ref Table
