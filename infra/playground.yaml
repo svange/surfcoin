@@ -10,11 +10,7 @@ Parameters:
   SiteOrigin:
     Type: String
     Default: https://surfcoin.aillc.link
-    Description: Primary browser origin of the deployed site.
-  ExtraOrigins:
-    Type: CommaDelimitedList
-    Default: "https://www.surfcoin.aillc.link,https://surf.fail,https://www.surf.fail,http://localhost:5173,http://localhost:37740"
-    Description: Additional allowed origins (future prod domain + local dev).
+    Description: Primary browser origin of the deployed site (used for OAuth callback).
   CognitoDomainPrefix:
     Type: String
     Default: surfcoin-play-5658
@@ -66,14 +62,14 @@ Resources:
       SupportedIdentityProviders: [COGNITO]
       CallbackURLs:
         - !Sub "${SiteOrigin}/playground"
-        - https://surf.fail/playground
-        - https://www.surf.fail/playground
+        - https://surfcoin.fail/playground
+        - https://www.surfcoin.fail/playground
         - http://localhost:5173/playground
         - http://localhost:37740/playground
       LogoutURLs:
         - !Sub "${SiteOrigin}/playground"
-        - https://surf.fail/playground
-        - https://www.surf.fail/playground
+        - https://surfcoin.fail/playground
+        - https://www.surfcoin.fail/playground
         - http://localhost:5173/playground
         - http://localhost:37740/playground
       ExplicitAuthFlows:
@@ -208,12 +204,13 @@ Resources:
       Name: surfcoin-playground
       ProtocolType: HTTP
       CorsConfiguration:
-        AllowOrigins: !Split
-          - ","
-          - !Join
-            - ","
-            - - !Ref SiteOrigin
-              - !Join [",", !Ref ExtraOrigins]
+        AllowOrigins:
+          - https://surfcoin.aillc.link
+          - https://www.surfcoin.aillc.link
+          - https://surfcoin.fail
+          - https://www.surfcoin.fail
+          - http://localhost:5173
+          - http://localhost:37740
         AllowMethods: [GET, POST, PUT, DELETE, OPTIONS]
         AllowHeaders: [authorization, content-type]
         MaxAge: 3600
@@ -239,11 +236,42 @@ Resources:
           - !Ref UserPoolClient
         Issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
 
-  DefaultRoute:
+  # Explicit method routes (not ANY): OPTIONS is intentionally NOT routed so
+  # API Gateway's automatic CORS handles preflight itself. An ANY route would
+  # send the browser's unauthenticated OPTIONS preflight through the JWT
+  # authorizer, which 401s and breaks every cross-origin call.
+  GetRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref HttpApi
-      RouteKey: "ANY /api/{proxy+}"
+      RouteKey: "GET /api/{proxy+}"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${HttpApiIntegration}"
+
+  PostRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /api/{proxy+}"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${HttpApiIntegration}"
+
+  PutRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "PUT /api/{proxy+}"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${HttpApiIntegration}"
+
+  DeleteRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "DELETE /api/{proxy+}"
       AuthorizationType: JWT
       AuthorizerId: !Ref JwtAuthorizer
       Target: !Sub "integrations/${HttpApiIntegration}"
