@@ -62,46 +62,37 @@ card intentionally shows only the tagline + domain.
 
 ---
 
-## Deploying to AWS
+## Deploying to AWS (gitops)
 
-The site is a private S3 bucket served through CloudFront (Origin Access
-Control), with an ACM cert and optional Route53 records. Everything is in
-`infra/stack.yaml`. **Deploy in `us-east-1`** — CloudFront requires its
-certificate there.
+The whole app — static site **and** playground backend — is one SAM stack
+(`template.yaml`), deployed in `us-east-1` by the GitHub Actions pipeline
+(`.github/workflows/deploy.yaml`). There is no manual `aws cloudformation deploy`
+anymore.
 
-### 1. One-time: create the infrastructure
+- **Open a PR** → the pipeline runs code-quality, security (gitleaks, semgrep,
+  npm audit) and build-validation (`sam validate` + frontend/backend builds).
+- **Merge to `main`** → the `deploy` job assumes the repo-scoped OIDC role
+  (`surfcoin-deploy`), runs `sam deploy`, then builds the SPA against the fresh
+  stack outputs and publishes it to the site bucket (hashed assets cached
+  forever, `index.html` never cached), and invalidates CloudFront. Then
+  smoke-tests hit the live site.
 
-```bash
-# Route53-managed DNS (recommended): pass your hosted zone ID so the cert
-# validates and DNS records are created automatically.
-aws cloudformation deploy \
-  --stack-name surfcoin-site \
-  --region us-east-1 \
-  --template-file infra/stack.yaml \
-  --parameter-overrides DomainName=surfcoin.fail HostedZoneId=<YOUR_ZONE_ID>
-```
+Config lives in GitHub **repo variables** (`AWS_DEPLOY_ROLE_ARN`, the two
+`*_HOSTED_ZONE_ID`s, `STACK_NAME`, domains, `COGNITO_DOMAIN_PREFIX`); no AWS keys
+are stored. Deploys are gated on the `production` environment.
 
-If the domain's DNS is **not** on Route53 yet, omit `HostedZoneId`. The stack
-then skips DNS records; you must (a) add the ACM validation CNAME shown in the
-ACM console, and (b) point `surfcoin.fail` at the CloudFront domain
-(`DistributionDomainName` output) yourself.
+All infra changes go through this flow — edit `template.yaml`, open a PR, merge.
 
-The `aws cloudformation deploy` command blocks until the stack is ready
-(the ACM cert won't finish validating until DNS is in place).
-
-### 2. Every deploy after that
+### Local iteration (no deploy)
 
 ```bash
-npm run deploy
+npm run build            # type-check + build the SPA
+npm run build:backend    # esbuild-bundle the Lambda into backend/dist/
+sam validate --lint      # validate the template
 ```
 
-This builds, syncs `dist/` to the bucket (hashed assets cached forever,
-`index.html` never cached so launch-day changes appear instantly), and
-invalidates CloudFront. Override defaults with env vars if needed:
-
-```bash
-STACK_NAME=surfcoin-site AWS_REGION=us-east-1 npm run deploy
-```
+If you ever need to publish the frontend by hand against the live stack:
+`AWS_PROFILE=sandbox npm run publish:frontend`.
 
 ---
 
@@ -142,14 +133,12 @@ cross-origin browser calls (Cloudflare 403s any request carrying an `Origin`).
 The shared request/response contract is `shared/types.ts`, imported by both the
 SPA and the Lambda.
 
-```bash
-# Deploy the playground backend (stack if changed, then bundle + push Lambda,
-# then regenerate src/playground/runtime.ts from stack outputs):
-AWS_PROFILE=sandbox bash scripts/deploy-playground.sh
-```
+The backend is part of the single SAM stack (see **Deploying to AWS** above) —
+the pipeline builds and ships it on every merge to `main`.
 
 The frontend reads its Cognito/API identifiers from `src/playground/runtime.ts`
-(public values, safe to ship). Regenerate them any time with
+(public values, safe to ship). The pipeline regenerates that file from the stack
+outputs before each build; to refresh it locally run
 `AWS_PROFILE=sandbox bash scripts/sync-playground-config.sh`.
 
 ## Project layout
@@ -167,12 +156,12 @@ src/
   lib/                # formatting, palette, toast
 backend/src/          # Lambda: router, db, pump.fun client, pumpportal, solana, autopilot
 public/               # favicon.svg, og.png, robots.txt
-infra/
-  stack.yaml          # static site: CloudFront + S3 + ACM + Route53
-  playground.yaml     # Cognito + DynamoDB + KMS + Lambda + HTTP API + tick
+template.yaml         # ONE SAM stack: site (S3/CloudFront/ACM/Route53) + backend
+samconfig.toml        # SAM deploy defaults
+.github/workflows/
+  deploy.yaml         # CI/CD: checks → sam deploy (OIDC) → publish SPA → smoke
 scripts/
-  deploy.sh                    # site: build → sync → invalidate
-  deploy-playground.sh         # backend: stack → bundle → update Lambda
+  publish-frontend.sh          # build SPA from stack outputs → sync → invalidate
   sync-playground-config.sh    # write runtime.ts from stack outputs
 ```
 

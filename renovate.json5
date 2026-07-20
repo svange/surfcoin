@@ -1,0 +1,96 @@
+// Renovate config — service repo (single `main` branch, deploys infra via gitops).
+// Adapted from the org's canonical service template (ai-cc-tools) for a Node repo:
+// npm manager instead of pep621, same commit-prefix -> release conventions.
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigestsToSemver"
+  ],
+
+  "schedule": ["before 11:59pm on Sunday"],
+  "timezone": "America/Los_Angeles",
+  "platformAutomerge": true,
+  "automergeStrategy": "merge-commit",
+  "rangeStrategy": "auto",
+  "rebaseWhen": "behind-base-branch",
+
+  "enabledManagers": [
+    "npm",
+    "pre-commit",
+    "github-actions"
+  ],
+
+  "labels": ["dependencies", "renovate"],
+
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 11:59pm on the first day of the month"],
+    "commitMessageAction": "refresh",
+    "automerge": true
+  },
+
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"],
+    "labels": ["dependencies", "security"],
+    "commitMessagePrefix": "fix(deps):",
+    "automerge": true
+  },
+
+  "packageRules": [
+    // --- Runtime dependencies: fix(deps): — triggers a patch release ---
+    {
+      "matchDepTypes": ["dependencies"],
+      "matchUpdateTypes": ["patch"],
+      "commitMessagePrefix": "fix(deps):",
+      "automerge": true
+    },
+    {
+      "matchDepTypes": ["dependencies"],
+      "matchUpdateTypes": ["minor"],
+      "commitMessagePrefix": "fix(deps):",
+      "automerge": false
+    },
+    {
+      "matchDepTypes": ["dependencies"],
+      "matchUpdateTypes": ["major"],
+      "commitMessagePrefix": "fix(deps):",
+      "automerge": false,
+      "dependencyDashboardApproval": true
+    },
+
+    // --- Dev dependencies: chore(deps-dev): — grouped, no release ---
+    {
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "commitMessagePrefix": "chore(deps-dev):",
+      "automerge": true,
+      "groupName": "dev dependency updates",
+      "groupSlug": "dev-deps"
+    },
+    {
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["major"],
+      "commitMessagePrefix": "chore(deps-dev):",
+      "automerge": false
+    },
+
+    // --- GitHub Actions ---
+    {
+      "matchManagers": ["github-actions"],
+      "commitMessagePrefix": "ci(deps):",
+      "automerge": true,
+      "groupName": "GitHub Actions",
+      "groupSlug": "gh-actions"
+    },
+
+    // --- Pre-commit hooks ---
+    {
+      "matchManagers": ["pre-commit"],
+      "commitMessagePrefix": "ci(deps):",
+      "automerge": true
+    }
+  ]
+}
