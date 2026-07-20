@@ -1,0 +1,11 @@
+version = 0.1
+
+# Single stack for the whole app (site + playground backend). The pipeline
+# passes the account-specific zone IDs via --parameter-overrides from GitHub
+# repo variables; everything else defaults here for local/bootstrap use.
+[default.deploy.parameters]
+stack_name = "surfcoin"
+region = "us-east-1"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
+no_fail_on_empty_changeset = true

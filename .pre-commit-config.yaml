@@ -1,0 +1,34 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+        # SAM/CFN intrinsic tags (!GetAtt, !Sub) aren't plain YAML
+        exclude: '(^template\.yaml$)'
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      - id: forbid-env-commit
+        name: Block .env files
+        entry: ".env files must not be committed"
+        language: fail
+        files: '(^|/)\.env($|\.)'
+        exclude: '\.(example|sample)$'
+
+      - id: typecheck
+        name: TypeScript type-check
+        entry: npx tsc -b --noEmit
+        language: system
+        files: '\.(ts|tsx)$'
+        pass_filenames: false
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.0
+    hooks:
+      - id: gitleaks

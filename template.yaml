@@ -1,0 +1,471 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  surfcoin — single stack for the whole app. Static site (private S3 + CloudFront
+  with OAC, ACM cert, Route53) for surfcoin.fail (primary) with surfcoin.aillc.link
+  kept as a convenience alias, plus the pump.fun playground backend: Cognito
+  managed-login PKCE client, DynamoDB, KMS, a Node Lambda behind an HTTP API with
+  a Cognito JWT authorizer, and a 1-minute EventBridge tick for the autopilot rule
+  engine. Deploy in us-east-1 (CloudFront requires its ACM cert there).
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: surfcoin.fail
+    Description: Primary apex domain (production).
+  FailHostedZoneId:
+    Type: String
+    Description: Route53 hosted zone ID for surfcoin.fail.
+  AliasDomainName:
+    Type: String
+    Default: surfcoin.aillc.link
+    Description: Convenience alias domain served by the same distribution.
+  AliasHostedZoneId:
+    Type: String
+    Description: Route53 hosted zone ID for the alias domain (surfcoin.aillc.link).
+  CognitoDomainPrefix:
+    Type: String
+    Default: surfcoin-play
+    Description: Globally unique (per region) Cognito hosted-login domain prefix.
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    MemorySize: 512
+    Timeout: 30
+    Tracing: Active
+
+Resources:
+  # ── Static site: S3 + CloudFront ────────────────────────────────────────────
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${DomainName}-site"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${SiteBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+
+  # One cert covering both domains, DNS-validated in each domain's own zone.
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      SubjectAlternativeNames:
+        - !Sub "www.${DomainName}"
+        - !Ref AliasDomainName
+        - !Sub "www.${AliasDomainName}"
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref FailHostedZoneId
+        - DomainName: !Sub "www.${DomainName}"
+          HostedZoneId: !Ref FailHostedZoneId
+        - DomainName: !Ref AliasDomainName
+          HostedZoneId: !Ref AliasHostedZoneId
+        - DomainName: !Sub "www.${AliasDomainName}"
+          HostedZoneId: !Ref AliasHostedZoneId
+
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${DomainName}-oac"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Ref DomainName
+        Aliases:
+          - !Ref DomainName
+          - !Sub "www.${DomainName}"
+          - !Ref AliasDomainName
+          - !Sub "www.${AliasDomainName}"
+        DefaultRootObject: index.html
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: s3-site
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !Ref OriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: s3-site
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # AWS managed CachingOptimized
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 60
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 60
+        ViewerCertificate:
+          AcmCertificateArn: !Ref Certificate
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+
+  # surfcoin.fail (+www)
+  ApexRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref FailHostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget: { HostedZoneId: Z2FDTNDATAQYW2, DNSName: !GetAtt Distribution.DomainName }
+  ApexRecordV6:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref FailHostedZoneId
+      Name: !Ref DomainName
+      Type: AAAA
+      AliasTarget: { HostedZoneId: Z2FDTNDATAQYW2, DNSName: !GetAtt Distribution.DomainName }
+  WwwRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref FailHostedZoneId
+      Name: !Sub "www.${DomainName}"
+      Type: A
+      AliasTarget: { HostedZoneId: Z2FDTNDATAQYW2, DNSName: !GetAtt Distribution.DomainName }
+  WwwRecordV6:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref FailHostedZoneId
+      Name: !Sub "www.${DomainName}"
+      Type: AAAA
+      AliasTarget: { HostedZoneId: Z2FDTNDATAQYW2, DNSName: !GetAtt Distribution.DomainName }
+
+  # surfcoin.aillc.link (+www) — convenience alias
+  AliasApexRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref AliasHostedZoneId
+      Name: !Ref AliasDomainName
+      Type: A
+      AliasTarget: { HostedZoneId: Z2FDTNDATAQYW2, DNSName: !GetAtt Distribution.DomainName }
+  AliasApexRecordV6:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref AliasHostedZoneId
+      Name: !Ref AliasDomainName
+      Type: AAAA
+      AliasTarget: { HostedZoneId: Z2FDTNDATAQYW2, DNSName: !GetAtt Distribution.DomainName }
+  AliasWwwRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref AliasHostedZoneId
+      Name: !Sub "www.${AliasDomainName}"
+      Type: A
+      AliasTarget: { HostedZoneId: Z2FDTNDATAQYW2, DNSName: !GetAtt Distribution.DomainName }
+  AliasWwwRecordV6:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref AliasHostedZoneId
+      Name: !Sub "www.${AliasDomainName}"
+      Type: AAAA
+      AliasTarget: { HostedZoneId: Z2FDTNDATAQYW2, DNSName: !GetAtt Distribution.DomainName }
+
+  # ── Identity ────────────────────────────────────────────────────────────────
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${AWS::StackName}-users"
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      DeletionProtection: INACTIVE
+      MfaConfiguration: "OFF"
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate: [email]
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Ref CognitoDomainPrefix
+      ManagedLoginVersion: 2
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: playground-spa
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs:
+        - !Sub "https://${DomainName}/playground"
+        - !Sub "https://www.${DomainName}/playground"
+        - !Sub "https://${AliasDomainName}/playground"
+        - !Sub "https://www.${AliasDomainName}/playground"
+        - http://localhost:5173/playground
+        - http://localhost:37740/playground
+      LogoutURLs:
+        - !Sub "https://${DomainName}/playground"
+        - !Sub "https://www.${DomainName}/playground"
+        - !Sub "https://${AliasDomainName}/playground"
+        - !Sub "https://www.${AliasDomainName}/playground"
+        - http://localhost:5173/playground
+        - http://localhost:37740/playground
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+
+  ManagedLoginBranding:
+    Type: AWS::Cognito::ManagedLoginBranding
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientId: !Ref UserPoolClient
+      UseCognitoProvidedValues: true
+
+  # ── Data ────────────────────────────────────────────────────────────────────
+  Table:
+    Type: AWS::DynamoDB::Table
+    # Retain so a stack teardown never silently drops linked keys / rules.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub "${AWS::StackName}-data"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  CredentialsKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Encrypts linked pump.fun / PumpPortal credentials at rest.
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AccountAdmin
+            Effect: Allow
+            Principal: { AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root" }
+            Action: "kms:*"
+            Resource: "*"
+
+  CredentialsKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub "alias/${AWS::StackName}"
+      TargetKeyId: !Ref CredentialsKey
+
+  # ── API Lambda ──────────────────────────────────────────────────────────────
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-api"
+      # Pre-bundled by esbuild (npm run build:backend) — CodeUri holds index.js.
+      CodeUri: backend/dist/
+      Handler: index.handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref Table
+          KMS_KEY_ID: !Ref CredentialsKey
+          SITE_ORIGIN: !Sub "https://${DomainName}"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref Table
+        - Statement:
+            - Effect: Allow
+              Action: [kms:Encrypt, kms:Decrypt]
+              Resource: !GetAtt CredentialsKey.Arn
+
+  # ── HTTP API with Cognito JWT auth ─────────────────────────────────────────
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${AWS::StackName}-api"
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - !Sub "https://${DomainName}"
+          - !Sub "https://www.${DomainName}"
+          - !Sub "https://${AliasDomainName}"
+          - !Sub "https://www.${AliasDomainName}"
+          - http://localhost:5173
+          - http://localhost:37740
+        AllowMethods: [GET, POST, PUT, DELETE, OPTIONS]
+        AllowHeaders: [authorization, content-type]
+        MaxAge: 3600
+
+  HttpApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ApiFunction.Arn
+      PayloadFormatVersion: "2.0"
+
+  JwtAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref HttpApi
+      AuthorizerType: JWT
+      Name: cognito
+      IdentitySource: ["$request.header.Authorization"]
+      JwtConfiguration:
+        Audience: [!Ref UserPoolClient]
+        Issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+
+  # Explicit method routes (not ANY): OPTIONS is intentionally NOT routed so
+  # API Gateway's automatic CORS answers preflight. An ANY route would send the
+  # browser's unauthenticated OPTIONS through the JWT authorizer, which 401s and
+  # breaks every cross-origin call.
+  GetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /api/{proxy+}"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${HttpApiIntegration}"
+  PostRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /api/{proxy+}"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${HttpApiIntegration}"
+  PutRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "PUT /api/{proxy+}"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${HttpApiIntegration}"
+  DeleteRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "DELETE /api/{proxy+}"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub "integrations/${HttpApiIntegration}"
+
+  HttpApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: "$default"
+      AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 50
+        ThrottlingRateLimit: 25
+
+  ApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*"
+
+  # ── Autopilot tick ─────────────────────────────────────────────────────────
+  AutopilotTick:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${AWS::StackName}-autopilot"
+      ScheduleExpression: rate(1 minute)
+      State: ENABLED
+      Targets:
+        - Id: api-function
+          Arn: !GetAtt ApiFunction.Arn
+          Input: '{"source":"autopilot-tick"}'
+
+  AutopilotInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AutopilotTick.Arn
+
+Outputs:
+  SiteUrl:
+    Value: !Sub "https://${DomainName}"
+  BucketName:
+    Value: !Ref SiteBucket
+  DistributionId:
+    Value: !Ref Distribution
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  CognitoDomain:
+    Value: !Sub "https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com"
+  ApiEndpoint:
+    Value: !GetAtt HttpApi.ApiEndpoint
+  TableName:
+    Value: !Ref Table

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Regenerate src/playground/runtime.ts from the surfcoin-playground stack
-# outputs. Run after any playground-stack deploy. AWS_PROFILE must point at
-# the account holding the stack (sandbox for surfcoin.aillc.link).
+# Regenerate src/playground/runtime.ts from the deployed stack outputs. Run by
+# the pipeline after `sam deploy`, before the frontend build. AWS creds must be
+# for the account holding the stack.
 set -euo pipefail
 
-STACK_NAME="${PLAYGROUND_STACK_NAME:-surfcoin-playground}"
+STACK_NAME="${STACK_NAME:-surfcoin}"
 REGION="${AWS_REGION:-us-east-1}"
 
 cd "$(dirname "$0")/.."
@@ -26,11 +26,9 @@ fi
 
 cat > src/playground/runtime.ts <<EOF
 /**
- * Deployed-stack wiring for the playground. These are public identifiers
- * (safe to ship in the bundle). Values come from the surfcoin-playground
- * CloudFormation stack outputs — regenerate with:
- *
- *   bash scripts/sync-playground-config.sh
+ * Deployed-stack wiring for the playground. Public identifiers, safe to ship.
+ * Generated from the '${STACK_NAME}' CloudFormation stack outputs by the
+ * pipeline (scripts/sync-playground-config.sh) — do not edit by hand.
  */
 export const runtime = {
   cognitoDomain: '$COGNITO_DOMAIN',
@@ -42,5 +40,4 @@ export const runtime = {
 export const isPlaygroundConfigured = !runtime.clientId.startsWith('REPLACE')
 EOF
 
-echo "Wrote src/playground/runtime.ts:"
-grep -E "cognitoDomain|userPoolId|clientId|apiBase" src/playground/runtime.ts
+echo "Wrote src/playground/runtime.ts from stack '$STACK_NAME'."

@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "tsc -b && vite build",
+    "build:backend": "tsc -p backend/tsconfig.json --noEmit && esbuild backend/src/index.ts --bundle --platform=node --target=node22 --format=cjs --outfile=backend/dist/index.js --minify",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
-    "deploy": "bash scripts/deploy.sh"
+    "publish:frontend": "bash scripts/publish-frontend.sh"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",

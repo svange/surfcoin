@@ -1,0 +1,29 @@
+# .github/.ai-compliance.yaml
+# Per-repo overrides for the org-wide compliance engine.
+# surfcoin is a Node (Vite/React + Node Lambda) service deployed via SAM, and a
+# personal side-project, so it deviates from the canonical Python service shape.
+metadata:
+  standards_version: "2026-04-22"
+  last_standardized: "2026-07-20"
+  last_standardized_by: "samuelvange@gmail.com"
+  notes: >-
+    Node/Vite + SAM, not Python/uv. Single-environment (main -> production only);
+    no dev/staging branch. Lives in a shared sandbox account, so it uses its own
+    scoped deploy role rather than the org PIPELINE/CLOUDFORMATION execution roles.
+
+overrides:
+  deploy.oidc_trust_scoped:
+    reason: "Dedicated per-repo deploy role in a shared sandbox account; not the org pipeline role."
+    created_at: 2026-07-20
+    approved_by: "samuelvange@gmail.com"
+    role_name_template: "surfcoin-deploy"
+
+disabled_checks:
+  - id: deploy.dev_branch_promotion
+    reason: "Single-environment side project — main deploys straight to production, no dev->main promotion."
+    created_at: 2026-07-20
+    approved_by: "samuelvange@gmail.com"
+  - id: deploy.health_probe
+    reason: "Static marketing site; smoke test checks the homepage + /playground return 200 instead of a /health endpoint."
+    created_at: 2026-07-20
+    approved_by: "samuelvange@gmail.com"
