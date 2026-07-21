@@ -48,6 +48,24 @@ export interface LinkPumpPortalRequest {
   walletPublicKey?: string
 }
 
+// ── tracked-coins registry (drives the public /coins page) ───────────────────
+
+export interface RegistryResponse {
+  /** pump.fun creator wallet — every coin it launches is auto-tracked */
+  creatorWallet: string | null
+  /** explicitly pinned mints */
+  mints: string[]
+  /** has an owner claimed the registry yet? */
+  claimed: boolean
+  /** is the calling user the owner (or free to claim)? */
+  isOwner: boolean
+}
+
+export interface RegistrySaveRequest {
+  creatorWallet: string | null
+  mints: string[]
+}
+
 // ── pump.fun data (normalized) ───────────────────────────────────────────────
 
 export interface PumpCoin {

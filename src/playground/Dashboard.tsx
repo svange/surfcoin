@@ -6,6 +6,7 @@ import { CoinDetail } from './CoinDetail'
 import { CoinsPanel } from './CoinsPanel'
 import { LinkPanel } from './LinkPanel'
 import { RawExplorer } from './RawExplorer'
+import { TrackedCoinsPanel } from './TrackedCoinsPanel'
 import { Empty, Panel } from './ui'
 
 type Tab = 'trade' | 'autopilot' | 'explorer' | 'connections'
@@ -55,7 +56,14 @@ export function Dashboard({ me, onMe }: { me: MeResponse; onMe: (me: MeResponse)
         </span>
       </nav>
 
-      {tab === 'connections' && <LinkPanel me={me} onChange={onMe} />}
+      {tab === 'connections' && (
+        <div className="space-y-5">
+          <LinkPanel me={me} onChange={onMe} />
+          <div className="grid gap-5 md:grid-cols-2">
+            <TrackedCoinsPanel />
+          </div>
+        </div>
+      )}
 
       {tab === 'trade' && (
         <div className="grid gap-5 lg:grid-cols-[minmax(280px,340px)_1fr]">

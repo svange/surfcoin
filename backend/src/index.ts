@@ -9,6 +9,8 @@ import type {
   MeResponse,
   PlaygroundSettings,
   PumpCoin,
+  RegistryResponse,
+  RegistrySaveRequest,
   RuleInput,
   TradeBuildRequest,
   TradeRequest,
@@ -19,12 +21,14 @@ import {
   DEFAULT_SETTINGS,
   deleteRule,
   getProfile,
+  getRegistry,
   getRule,
   listActivity,
   listRules,
   patchProfile,
   putActivity,
   putNonce,
+  putRegistry,
   putRule,
   takeNonce,
   type Profile,
@@ -74,7 +78,7 @@ export const handler = async (event: LambdaEvent): Promise<APIGatewayProxyResult
     // Public, unauthenticated routes (no Cognito sub) — read-only pump.fun data
     // for the public /coins page. Routed via GET /public/{proxy+} (no authorizer).
     if (http.requestContext.http.path.startsWith('/public/')) {
-      return await publicRoute(method, path, http)
+      return await publicRoute(method, path)
     }
     const sub = http.requestContext.authorizer?.jwt?.claims?.sub
     if (typeof sub !== 'string' || !sub) throw new HttpError(401, 'no subject claim')
@@ -205,6 +209,40 @@ async function route(
     }
     await patchProfile(sub, { settings })
     return json(200, await me(sub))
+  }
+
+  // ── tracked-coins registry (drives the public /coins page) ──────────────────
+  if (key === 'GET /registry') {
+    const reg = await getRegistry()
+    return json(200, {
+      creatorWallet: reg.creatorWallet ?? null,
+      mints: reg.mints ?? [],
+      claimed: !!reg.ownerSub,
+      isOwner: !reg.ownerSub || reg.ownerSub === sub,
+    } satisfies RegistryResponse)
+  }
+
+  if (key === 'PUT /registry') {
+    const req = body<RegistrySaveRequest>(event)
+    const reg = await getRegistry()
+    // First writer claims ownership; afterwards only the owner may change it.
+    if (reg.ownerSub && reg.ownerSub !== sub) {
+      throw new HttpError(403, 'the tracked-coins registry is managed by another account')
+    }
+    const creatorWallet = req.creatorWallet?.trim() || null
+    if (creatorWallet && !isBase58Address(creatorWallet)) {
+      throw new HttpError(400, 'creatorWallet is not a valid Solana address')
+    }
+    if (!Array.isArray(req.mints)) throw new HttpError(400, 'mints must be an array')
+    const mints = [...new Set(req.mints.map(m => m.trim()).filter(Boolean))].slice(0, 50)
+    for (const m of mints) if (!isBase58Address(m)) throw new HttpError(400, `invalid mint: ${m}`)
+    await putRegistry({
+      ownerSub: reg.ownerSub ?? sub,
+      creatorWallet,
+      mints,
+      updatedAt: new Date().toISOString(),
+    })
+    return json(200, { creatorWallet, mints, claimed: true, isOwner: true } satisfies RegistryResponse)
   }
 
   // ── pump.fun data ─────────────────────────────────────────────────────────
@@ -424,18 +462,12 @@ async function route(
 async function publicRoute(
   method: string,
   path: string,
-  event: APIGatewayProxyEventV2WithJWTAuthorizer,
 ): Promise<APIGatewayProxyResultV2> {
   if (method === 'GET' && path === '/coins') {
-    const creator = q(event, 'creator')?.trim()
-    if (creator && !isBase58Address(creator)) throw new HttpError(400, 'invalid creator address')
-
-    const mints = (q(event, 'mints') ?? '')
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean)
-      .slice(0, 20)
-    for (const m of mints) if (!isBase58Address(m)) throw new HttpError(400, `invalid mint: ${m}`)
+    // Reads the owner-managed registry (set in the playground), not query input.
+    const reg = await getRegistry()
+    const creator = reg.creatorWallet ?? null
+    const mints = (reg.mints ?? []).slice(0, 50)
 
     const solUsd = await getSolPriceUsd().catch(() => null)
     const byMint = new Map<string, PumpCoin>()
