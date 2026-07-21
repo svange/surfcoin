@@ -18,6 +18,15 @@ overrides:
     approved_by: "samuelvange@gmail.com"
     role_name_template: "surfcoin-deploy"
 
+  compliance.license_copyleft:
+    reason: >-
+      LGPL-3.0 is permitted. The only LGPL dependency is rpc-websockets, pulled
+      in transitively by @solana/web3.js and used as an unmodified bundled
+      library (weak copyleft). The CI license gate still fails on strong
+      copyleft (GPL/AGPL/SSPL).
+    created_at: 2026-07-21
+    approved_by: "samuelvange@gmail.com"
+
 disabled_checks:
   - id: deploy.dev_branch_promotion
     reason: "Single-environment side project — main deploys straight to production, no dev->main promotion."
