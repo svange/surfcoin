@@ -48,6 +48,29 @@ export interface LinkPumpPortalRequest {
   walletPublicKey?: string
 }
 
+// ── roles & user management (admin only) ─────────────────────────────────────
+
+/** Cognito user-pool group names. A user with neither group is pending approval. */
+export type Role = 'approved' | 'admins'
+
+export interface AdminUserSummary {
+  sub: string
+  email: string | null
+  /** Cognito UserStatus, e.g. CONFIRMED / UNCONFIRMED */
+  status: string
+  createdAt: string | null
+  groups: Role[]
+}
+
+export interface AdminUsersResponse {
+  users: AdminUserSummary[]
+}
+
+export interface AdminGroupChangeRequest {
+  group: Role
+  action: 'add' | 'remove'
+}
+
 // ── tracked-coins registry (drives the public /coins page) ───────────────────
 
 export interface RegistryResponse {

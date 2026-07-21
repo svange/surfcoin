@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
 import type { MeResponse, PumpCoin } from '../../shared/types'
 import { ActivityPanel, type ActivityHandle } from './ActivityPanel'
+import { AdminUsersPanel } from './AdminUsersPanel'
+import { useAuth } from './AuthContext'
 import { AutopilotPanel } from './AutopilotPanel'
 import { CoinDetail } from './CoinDetail'
 import { CoinsPanel } from './CoinsPanel'
@@ -9,16 +11,18 @@ import { RawExplorer } from './RawExplorer'
 import { TrackedCoinsPanel } from './TrackedCoinsPanel'
 import { Empty, Panel } from './ui'
 
-type Tab = 'trade' | 'autopilot' | 'explorer' | 'connections'
+type Tab = 'trade' | 'autopilot' | 'explorer' | 'connections' | 'users'
 
-const TABS: { id: Tab; label: string }[] = [
+const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: 'trade', label: 'Trade desk' },
   { id: 'autopilot', label: 'Autopilot' },
   { id: 'explorer', label: 'API explorer' },
   { id: 'connections', label: 'Connections' },
+  { id: 'users', label: 'Users', adminOnly: true },
 ]
 
 export function Dashboard({ me, onMe }: { me: MeResponse; onMe: (me: MeResponse) => void }) {
+  const { isAdmin } = useAuth()
   const [tab, setTab] = useState<Tab>(me.wallet || me.pumpPortal ? 'trade' : 'connections')
   const [selected, setSelected] = useState<PumpCoin | null>(null)
   const [ruleSeed, setRuleSeed] = useState<PumpCoin | null>(null)
@@ -29,7 +33,7 @@ export function Dashboard({ me, onMe }: { me: MeResponse; onMe: (me: MeResponse)
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
       <nav className="mb-6 flex flex-wrap gap-2">
-        {TABS.map(t => (
+        {TABS.filter(t => !t.adminOnly || isAdmin).map(t => (
           <button
             key={t.id}
             type="button"
@@ -101,6 +105,8 @@ export function Dashboard({ me, onMe }: { me: MeResponse; onMe: (me: MeResponse)
       )}
 
       {tab === 'explorer' && <RawExplorer />}
+
+      {tab === 'users' && isAdmin && <AdminUsersPanel />}
     </div>
   )
 }

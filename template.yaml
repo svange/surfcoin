@@ -241,6 +241,22 @@ Resources:
           Required: true
           Mutable: true
 
+  # Role groups — membership lands in tokens as the cognito:groups claim.
+  # No group = pending approval (the default for fresh signups).
+  ApprovedGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: approved
+      UserPoolId: !Ref UserPool
+      Description: Users approved to use the playground API.
+
+  AdminsGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: admins
+      UserPoolId: !Ref UserPool
+      Description: Can manage users (approve accounts, change roles).
+
   UserPoolDomain:
     Type: AWS::Cognito::UserPoolDomain
     Properties:
@@ -348,6 +364,7 @@ Resources:
           TABLE_NAME: !Ref Table
           KMS_KEY_ID: !Ref CredentialsKey
           SITE_ORIGIN: !Sub "https://${DomainName}"
+          USER_POOL_ID: !Ref UserPool
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref Table
@@ -355,6 +372,14 @@ Resources:
             - Effect: Allow
               Action: [kms:Encrypt, kms:Decrypt]
               Resource: !GetAtt CredentialsKey.Arn
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:ListUsers
+                - cognito-idp:ListUsersInGroup
+                - cognito-idp:AdminAddUserToGroup
+                - cognito-idp:AdminRemoveUserFromGroup
+              Resource: !GetAtt UserPool.Arn
 
   # ── HTTP API with Cognito JWT auth ─────────────────────────────────────────
   HttpApi:
