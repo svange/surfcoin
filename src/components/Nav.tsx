@@ -41,7 +41,13 @@ export function Nav() {
           </Link>
         </div>
         <div className="flex items-center gap-3">
-          {/* Always visible (incl. mobile) — the playground/login entry point. */}
+          {/* Always visible (incl. mobile): the coins page + playground/login. */}
+          <Link
+            to="/coins"
+            className="text-sm font-bold text-deepset transition-colors hover:text-burnt"
+          >
+            Coins
+          </Link>
           <Link
             to="/playground"
             className="text-sm font-bold text-deepset transition-colors hover:text-burnt"
