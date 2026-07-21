@@ -40,20 +40,29 @@ export function Nav() {
             Shaping Bay
           </Link>
         </div>
-        {isLive ? (
-          <a
-            href={pumpFunUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-full bg-burnt px-4 py-1.5 text-sm font-bold text-salt transition-colors hover:bg-dusk"
+        <div className="flex items-center gap-3">
+          {/* Always visible (incl. mobile) — the playground/login entry point. */}
+          <Link
+            to="/playground"
+            className="text-sm font-bold text-deepset transition-colors hover:text-burnt"
           >
-            Buy {config.ticker}
-          </a>
-        ) : (
-          <span className="rounded-full border border-coral/60 bg-coral/10 px-3 py-1.5 font-mono text-[11px] font-bold tracking-wider text-burnt uppercase">
-            pre-launch
-          </span>
-        )}
+            Log in
+          </Link>
+          {isLive ? (
+            <a
+              href={pumpFunUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-full bg-burnt px-4 py-1.5 text-sm font-bold text-salt transition-colors hover:bg-dusk"
+            >
+              Buy {config.ticker}
+            </a>
+          ) : (
+            <span className="rounded-full border border-coral/60 bg-coral/10 px-3 py-1.5 font-mono text-[11px] font-bold tracking-wider text-burnt uppercase">
+              pre-launch
+            </span>
+          )}
+        </div>
       </nav>
     </header>
   )
