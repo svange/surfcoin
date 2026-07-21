@@ -36,8 +36,10 @@ EventBridge rate(1 minute) ──► same Lambda ("autopilot-tick") — rule eng
   the browser wallet so private keys never leave it. Automation uses a
   PumpPortal Lightning API key: stored KMS-encrypted, **write-only** (never
   returned to the browser), used server-side only.
-- **`liveTrading: false` by default** — every trade path (manual Lightning +
-  autopilot rules) is forced to dry-run until the user flips the setting.
+- **`liveTrading: false` by default** — the master safety. Manual Lightning
+  trades, fee claims, and autopilot rules are forced to dry-run, and
+  wallet-signed `trade/build` + `trade/submit` are refused outright (they have
+  no dry-run form), until the user flips the setting.
   `autopilotEnabled: false` by default too; the tick is a no-op until armed.
 - All `/api/*` routes sit behind the Cognito JWT authorizer; per-user data is
   keyed by the token's `sub`, so users can only reach their own rows.
@@ -83,8 +85,8 @@ Public (no auth, under /public): `GET /public/coins` (drives `/coins`)
 unapproved → pending-approval page (polls for the `approved` claim); approved →
 `Dashboard` with tabs: Trade desk (`CoinsPanel` → `CoinDetail` with
 `CandleChart` + `TradePanel`), Autopilot (`AutopilotPanel` + `ActivityPanel`),
-API explorer (`RawExplorer`), Connections (`LinkPanel`, `TrackedCoinsPanel`),
-and an admin-only Users tab (`AdminUsersPanel`).
+API explorer (`RawExplorer`), Connections (`LinkPanel`, `ClaimFeesPanel`,
+`TrackedCoinsPanel`), and an admin-only Users tab (`AdminUsersPanel`).
 
 Chart palette is dataviz-validated against the `night` surface (#0B3038):
 candle-up `#2EA189`, candle-down `#DC5240`, volume `#C48122`. Marks stay

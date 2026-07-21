@@ -58,7 +58,7 @@ export function TrackedCoinsPanel() {
   }
 
   return (
-    <Panel title="Tracked coins" className="md:col-span-2">
+    <Panel title="Tracked coins">
       <p className="mb-4 font-mono text-[11px] text-seafoam/60">
         These drive the public{' '}
         <Link to="/coins" className="text-golden underline">
@@ -87,6 +87,25 @@ export function TrackedCoinsPanel() {
               disabled={readOnly}
             />
           </Field>
+
+          <p className="font-mono text-[10px] text-seafoam/50">
+            Nothing to hunt for on pump.fun — the creator wallet is just the wallet you're signed
+            in with when you hit create. See its coins (and claim rewards) at{' '}
+            <a
+              href={
+                creator.trim()
+                  ? `https://pump.fun/profile/${creator.trim()}`
+                  : 'https://pump.fun/profile'
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-golden underline"
+            >
+              pump.fun/profile
+            </a>
+            . Coins created through the PumpPortal Lightning API list the Lightning wallet as
+            creator — paste that address instead if you launch that way.
+          </p>
 
           <Field label="Pinned mints" hint="feature specific coins (optional)">
             <div className="flex gap-2">

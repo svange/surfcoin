@@ -94,6 +94,9 @@ export function claimFeesBody(p: ClaimFeesRequest): Record<string, unknown> {
   if (p.pool !== 'pump' && p.pool !== 'meteora-dbc') {
     throw new HttpError(400, 'pool must be pump or meteora-dbc')
   }
+  if (p.pool === 'meteora-dbc' && !p.mint) {
+    throw new HttpError(400, 'meteora-dbc claims need a mint')
+  }
   return {
     action: 'collectCreatorFee',
     priorityFee: p.priorityFee,

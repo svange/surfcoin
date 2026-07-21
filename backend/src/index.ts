@@ -385,6 +385,9 @@ async function route(
 
   if (key === 'POST /claim-fees') {
     const req = body<ClaimFeesRequest>(event)
+    if (req.mint !== undefined && !isBase58Address(req.mint)) {
+      throw new HttpError(400, 'mint is not a valid address')
+    }
     const sent = claimFeesBody(req)
     const profile = await getProfile(sub)
     const settings = { ...DEFAULT_SETTINGS, ...profile.settings }
@@ -400,6 +403,8 @@ async function route(
       } catch (e) {
         error = `send failed — claim may or may not have executed: ${e instanceof Error ? e.message : String(e)}`
       }
+    } else if (req.dryRun === false && !settings.liveTrading) {
+      error = 'liveTrading is off in settings — ran as dry run'
     } else if (req.dryRun === false && !profile.ppCiphertextB64) {
       error = 'no PumpPortal Lightning key linked — ran as dry run'
     }
@@ -424,6 +429,7 @@ async function route(
     const req = body<TradeBuildRequest>(event)
     validateTradeParams(req)
     if (!isBase58Address(req.publicKey)) throw new HttpError(400, 'publicKey is not a valid address')
+    assertLiveTrading(await getProfile(sub))
     return json(200, await buildLocalTrade(req.publicKey, req))
   }
 
@@ -435,6 +441,7 @@ async function route(
     // Only relay transactions that pay from the caller's own linked wallet —
     // not an open broadcast relay for arbitrary signed transactions.
     const profile = await getProfile(sub)
+    assertLiveTrading(profile)
     if (!profile.walletAddress) throw new HttpError(409, 'link a wallet before submitting transactions')
     const feePayer = transactionFeePayer(req.signedTxBase64)
     if (feePayer !== profile.walletAddress) {
@@ -560,6 +567,21 @@ async function me(sub: string): Promise<MeResponse> {
       ? { walletPublicKey: p.ppWalletPublicKey ?? null, linkedAt: p.ppLinkedAt }
       : null,
     settings: { ...DEFAULT_SETTINGS, ...p.settings },
+  }
+}
+
+/**
+ * Wallet-signed trades move real SOL the moment the wallet approves — they
+ * have no dry-run form, so the master safety refuses them outright instead of
+ * downgrading like the Lightning path does.
+ */
+function assertLiveTrading(profile: Profile): void {
+  const settings = { ...DEFAULT_SETTINGS, ...profile.settings }
+  if (!settings.liveTrading) {
+    throw new HttpError(
+      409,
+      'LIVE trading is off in Safety — wallet-signed trades are disabled (use Dry run to preview)',
+    )
   }
 }
 

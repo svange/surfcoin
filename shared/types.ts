@@ -12,8 +12,9 @@ export interface PlaygroundSettings {
   /** Master switch for the rule engine. Off = ticks are no-ops. */
   autopilotEnabled: boolean
   /**
-   * false = every trade (manual Lightning + rules) runs as a dry run no
-   * matter what the request says. The safety default.
+   * false = no trade path can move SOL: manual Lightning + rules downgrade to
+   * dry runs, and wallet-signed build/submit are refused outright (they have
+   * no dry-run form). The safety default.
    */
   liveTrading: boolean
 }

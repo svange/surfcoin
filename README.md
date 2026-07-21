@@ -116,12 +116,14 @@ dry-run-by-default environment. Sign up with email (AWS Cognito), then:
 - **API explorer** — raw GET passthrough to the pump.fun data hosts, host-locked
   and path-validated, so you can see everything the API exposes.
 
-### Two safety gates (both required for a real order)
+### The master safety gate
 
-Nothing executes for real unless **`liveTrading` is armed** *and* **a Lightning
-key is linked**. Otherwise every trade — manual and rule-driven — runs as a dry
-run that echoes the exact upstream request without sending it. Both toggles live
-under **Connections → Safety**.
+Nothing moves real SOL while **`liveTrading` is off** (the default). Lightning
+trades, fee claims, and autopilot rules downgrade to dry runs that echo the
+exact upstream request without sending it; wallet-signed trades are refused
+outright (they have no dry-run form). Arming LIVE plus a linked Lightning key
+enables Lightning/autopilot execution; arming LIVE plus a linked wallet enables
+wallet-signed orders. The toggles live under **Connections → Safety**.
 
 ### Backend architecture
 

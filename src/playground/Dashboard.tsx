@@ -4,6 +4,7 @@ import { ActivityPanel, type ActivityHandle } from './ActivityPanel'
 import { AdminUsersPanel } from './AdminUsersPanel'
 import { useAuth } from './AuthContext'
 import { AutopilotPanel } from './AutopilotPanel'
+import { ClaimFeesPanel } from './ClaimFeesPanel'
 import { CoinDetail } from './CoinDetail'
 import { CoinsPanel } from './CoinsPanel'
 import { LinkPanel } from './LinkPanel'
@@ -64,6 +65,7 @@ export function Dashboard({ me, onMe }: { me: MeResponse; onMe: (me: MeResponse)
         <div className="space-y-5">
           <LinkPanel me={me} onChange={onMe} />
           <div className="grid gap-5 md:grid-cols-2">
+            <ClaimFeesPanel me={me} />
             <TrackedCoinsPanel />
           </div>
         </div>

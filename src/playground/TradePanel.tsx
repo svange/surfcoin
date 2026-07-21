@@ -7,7 +7,7 @@ import type {
   TradeResponse,
 } from '../../shared/types'
 import { toast } from '../lib/toast'
-import { Button, Field, inputClass } from './ui'
+import { Button, Field, inputClass, TradeResult } from './ui'
 import { useApi } from './useApi'
 import { base64FromBytes, detectWallets } from './wallet'
 
@@ -18,7 +18,9 @@ const POOLS: Pool[] = ['auto', 'pump', 'pump-amm', 'raydium', 'bonk']
  *  - Lightning: server signs with the stored key (fast, custodial to that key)
  *  - Local wallet: server returns an unsigned tx, the browser wallet signs it,
  *    server relays it (keys stay in the wallet)
- * A dry run just echoes the exact upstream request without sending.
+ * A dry run just echoes the exact upstream request without sending. LIVE off
+ * downgrades Lightning sends to dry runs; wallet-signed trades have no dry-run
+ * form, so the backend refuses them outright until LIVE is armed.
  */
 export function TradePanel({
   coin,
@@ -66,6 +68,10 @@ export function TradePanel({
   }
 
   async function localWallet() {
+    if (!me.settings.liveTrading) {
+      toast('LIVE is off — wallet-signed orders move real SOL. Arm LIVE in Safety, or Dry run to preview.')
+      return
+    }
     setBusy(true)
     setResult(null)
     try {
@@ -185,44 +191,29 @@ export function TradePanel({
         <Button variant="ghost" onClick={() => lightning(true)} disabled={busy}>
           Dry run
         </Button>
+        {/* When this client believes LIVE is off, ask for a dry run outright —
+            the server never upgrades one, so a stale tab can't fire for real. */}
         <Button
           variant={action === 'buy' ? 'primary' : 'sell'}
-          onClick={() => lightning(false)}
+          onClick={() => lightning(!liveArmed)}
           disabled={busy || !canTrade}
           title={!liveArmed ? 'LIVE is off — this will simulate' : undefined}
         >
           {liveArmed ? `${action} via Lightning` : `${action} (dry — arm LIVE)`}
         </Button>
         {me.wallet && (
-          <Button variant="ghost" onClick={localWallet} disabled={busy}>
-            {action} with my wallet
+          <Button
+            variant="ghost"
+            onClick={localWallet}
+            disabled={busy}
+            title={!liveArmed ? 'LIVE is off — wallet-signed trades are always real, so they wait' : undefined}
+          >
+            {liveArmed ? `${action} with my wallet` : `${action} with wallet (arm LIVE)`}
           </Button>
         )}
       </div>
 
-      {result && (
-        <div className="rounded-lg border border-seafoam/20 bg-night/80 p-3">
-          <p className="font-mono text-[11px]">
-            <span className={result.ok ? 'text-seafoam' : 'text-coral'}>
-              {result.dryRun ? 'DRY RUN' : result.ok ? 'SENT' : 'ERROR'}
-            </span>
-            {result.error && <span className="text-coral"> — {result.error}</span>}
-          </p>
-          {result.signature && (
-            <a
-              href={`https://solscan.io/tx/${result.signature}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1 block truncate font-mono text-[10px] text-golden underline"
-            >
-              {result.signature}
-            </a>
-          )}
-          <pre className="mt-2 max-h-40 overflow-auto font-mono text-[10px] text-seafoam/70">
-            {JSON.stringify(result.sent, null, 2)}
-          </pre>
-        </div>
-      )}
+      {result && <TradeResult result={result} />}
     </div>
   )
 }
