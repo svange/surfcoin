@@ -68,6 +68,23 @@ jobs:
             p/secrets
             p/owasp-top-ten
 
+  compliance:
+    name: Compliance
+    runs-on: ubuntu-latest
+    needs: [code-quality]
+    if: github.event.pull_request.draft != true
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: License check (fail on copyleft)
+        run: |
+          npx --yes license-checker --production --summary --excludePrivatePackages \
+            --failOn 'GPL-1.0-only;GPL-1.0-or-later;GPL-2.0-only;GPL-2.0-or-later;GPL-3.0-only;GPL-3.0-or-later;AGPL-1.0-only;AGPL-1.0-or-later;AGPL-3.0-only;AGPL-3.0-or-later;LGPL-2.0-only;LGPL-2.1-only;LGPL-3.0-only;SSPL-1.0'
+
   build-validation:
     name: Build validation
     runs-on: ubuntu-latest
@@ -93,7 +110,7 @@ jobs:
   deploy:
     name: Deploy to AWS
     runs-on: ubuntu-latest
-    needs: [code-quality, security, build-validation]
+    needs: [code-quality, security, compliance, build-validation]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: production
