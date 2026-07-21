@@ -157,7 +157,7 @@ function PumpPortalLink({ me, onChange }: { me: MeResponse; onChange: (me: MeRes
                 className={inputClass}
                 value={apiKey}
                 onChange={e => setApiKey(e.target.value)}
-                placeholder="pp-…"
+                placeholder="paste your PumpPortal API key"
                 type="password"
               />
             </Field>
@@ -169,7 +169,7 @@ function PumpPortalLink({ me, onChange }: { me: MeResponse; onChange: (me: MeRes
                 placeholder="base58 address"
               />
             </Field>
-            <Button onClick={save} disabled={busy || apiKey.trim().length < 10}>
+            <Button onClick={save} disabled={busy || apiKey.trim().length < 1}>
               {busy ? 'saving…' : 'Link Lightning key'}
             </Button>
           </div>

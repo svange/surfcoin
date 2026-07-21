@@ -159,8 +159,11 @@ async function route(
 
   if (key === 'PUT /pumpportal') {
     const req = body<LinkPumpPortalRequest>(event)
-    if (typeof req.apiKey !== 'string' || req.apiKey.length < 10 || req.apiKey.length > 200) {
-      throw new HttpError(400, 'apiKey looks wrong')
+    // PumpPortal keys have no fixed prefix and can be long tokens — only
+    // sanity-check that it's a non-empty string within KMS's plaintext limit.
+    const apiKeyLen = typeof req.apiKey === 'string' ? req.apiKey.trim().length : -1
+    if (apiKeyLen < 1 || apiKeyLen > 1024) {
+      throw new HttpError(400, `apiKey looks wrong (got ${apiKeyLen} chars; expected 1–1024)`)
     }
     if (req.walletPublicKey !== undefined && !isBase58Address(req.walletPublicKey)) {
       throw new HttpError(400, 'walletPublicKey is not a valid Solana address')
