@@ -8,6 +8,7 @@ import type {
   LinkWalletRequest,
   MeResponse,
   PlaygroundSettings,
+  PumpCoin,
   RuleInput,
   TradeBuildRequest,
   TradeRequest,
@@ -68,10 +69,15 @@ export const handler = async (event: LambdaEvent): Promise<APIGatewayProxyResult
   }
   const http = event as APIGatewayProxyEventV2WithJWTAuthorizer
   try {
-    const sub = http.requestContext.authorizer?.jwt?.claims?.sub
-    if (typeof sub !== 'string' || !sub) throw new HttpError(401, 'no subject claim')
     const method = http.requestContext.http.method
     const path = '/' + (http.pathParameters?.proxy ?? '')
+    // Public, unauthenticated routes (no Cognito sub) — read-only pump.fun data
+    // for the public /coins page. Routed via GET /public/{proxy+} (no authorizer).
+    if (http.requestContext.http.path.startsWith('/public/')) {
+      return await publicRoute(method, path, http)
+    }
+    const sub = http.requestContext.authorizer?.jwt?.claims?.sub
+    if (typeof sub !== 'string' || !sub) throw new HttpError(401, 'no subject claim')
     return await route(sub, method, path, http)
   } catch (e) {
     if (e instanceof HttpError) return json(e.status, { error: e.message })
@@ -407,6 +413,48 @@ async function route(
   }
 
   throw new HttpError(404, `no route for ${key}`)
+}
+
+/**
+ * Unauthenticated read-only routes for the public /coins page. pump.fun blocks
+ * cross-origin browser calls, so the page reads its live bonding-curve stats
+ * through here. Inputs are base58-validated and capped; the HTTP API's
+ * per-route throttle bounds abuse of this as a generic pump.fun proxy.
+ */
+async function publicRoute(
+  method: string,
+  path: string,
+  event: APIGatewayProxyEventV2WithJWTAuthorizer,
+): Promise<APIGatewayProxyResultV2> {
+  if (method === 'GET' && path === '/coins') {
+    const creator = q(event, 'creator')?.trim()
+    if (creator && !isBase58Address(creator)) throw new HttpError(400, 'invalid creator address')
+
+    const mints = (q(event, 'mints') ?? '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .slice(0, 20)
+    for (const m of mints) if (!isBase58Address(m)) throw new HttpError(400, `invalid mint: ${m}`)
+
+    const solUsd = await getSolPriceUsd().catch(() => null)
+    const byMint = new Map<string, PumpCoin>()
+
+    if (creator) {
+      const created = await getCreatedCoins(creator, 30).catch(() => [])
+      for (const c of created) byMint.set(c.mint, c)
+    }
+    const missing = mints.filter(m => !byMint.has(m))
+    const fetched = await Promise.allSettled(missing.map(m => getCoin(m)))
+    fetched.forEach((r, i) => {
+      if (r.status === 'fulfilled') byMint.set(missing[i], r.value)
+    })
+
+    const coins = [...byMint.values()].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    return json(200, { coins, solUsd, at: new Date().toISOString() })
+  }
+
+  throw new HttpError(404, `no public route for ${method} ${path}`)
 }
 
 async function me(sub: string): Promise<MeResponse> {

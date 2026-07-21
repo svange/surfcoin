@@ -430,6 +430,15 @@ Resources:
       AuthorizerId: !Ref JwtAuthorizer
       Target: !Sub "integrations/${HttpApiIntegration}"
 
+  # Public, unauthenticated read-only route for the /coins page.
+  PublicGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /public/{proxy+}"
+      AuthorizationType: NONE
+      Target: !Sub "integrations/${HttpApiIntegration}"
+
   HttpApiStage:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
