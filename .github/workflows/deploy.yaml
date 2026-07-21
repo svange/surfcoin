@@ -139,7 +139,6 @@ jobs:
             --parameter-overrides \
               DomainName="${{ vars.DOMAIN_NAME }}" \
               FailHostedZoneId="${{ vars.FAIL_HOSTED_ZONE_ID }}" \
-              AliasHostedZoneId="${{ vars.ALIAS_HOSTED_ZONE_ID }}" \
               CognitoDomainPrefix="${{ vars.COGNITO_DOMAIN_PREFIX }}"
 
       - name: Publish frontend
