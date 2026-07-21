@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { PumpCoin } from '../../shared/types'
-import { config, hasTrackedCoins, trackedMints } from '../config'
+import { config } from '../config'
 import { formatUsd, truncateAddress } from '../lib/format'
 import { runtime } from '../playground/runtime'
 
@@ -135,19 +135,11 @@ function CoinCard({ coin }: { coin: PumpCoin }) {
 export default function CoinsPage() {
   const [data, setData] = useState<CoinsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(hasTrackedCoins)
-
-  const query = useMemo(() => {
-    const p = new URLSearchParams()
-    if (config.creatorWallet) p.set('creator', config.creatorWallet)
-    if (trackedMints.length) p.set('mints', trackedMints.join(','))
-    return p.toString()
-  }, [])
+  const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
-    if (!hasTrackedCoins) return
     try {
-      const res = await fetch(`${runtime.apiBase}/public/coins?${query}`)
+      const res = await fetch(`${runtime.apiBase}/public/coins`)
       if (!res.ok) throw new Error(`server ${res.status}`)
       const json: CoinsResponse = await res.json()
       setData(json)
@@ -157,11 +149,10 @@ export default function CoinsPage() {
     } finally {
       setLoading(false)
     }
-  }, [query])
+  }, [])
 
   useEffect(() => {
     load()
-    if (!hasTrackedCoins) return
     const id = setInterval(load, POLL_MS)
     const onVis = () => document.visibilityState === 'visible' && load()
     document.addEventListener('visibilitychange', onVis)
@@ -208,9 +199,7 @@ export default function CoinsPage() {
           a coin graduates.
         </p>
 
-        {!hasTrackedCoins ? (
-          <EmptyState kind="unconfigured" />
-        ) : loading && !data ? (
+        {loading && !data ? (
           <p className="py-16 text-center font-mono text-sm text-driftwood/50">
             checking the lineup…
           </p>
@@ -219,7 +208,7 @@ export default function CoinsPage() {
             couldn't load coins — {error}
           </p>
         ) : coins.length === 0 ? (
-          <EmptyState kind="nothing-yet" />
+          <EmptyState />
         ) : (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {coins.map(c => (
@@ -232,35 +221,21 @@ export default function CoinsPage() {
   )
 }
 
-function EmptyState({ kind }: { kind: 'unconfigured' | 'nothing-yet' }) {
+function EmptyState() {
   return (
     <div className="rounded-2xl border border-dashed border-driftwood/20 bg-white/40 px-6 py-16 text-center">
-      <p className="font-display text-2xl text-deepset">
-        {kind === 'unconfigured' ? 'No coins registered yet' : 'Nothing on the curve yet'}
-      </p>
+      <p className="font-display text-2xl text-deepset">No coins registered yet</p>
       <p className="mx-auto mt-3 max-w-lg font-mono text-sm text-driftwood/60">
-        {kind === 'unconfigured' ? (
-          <>
-            Set <code className="rounded bg-driftwood/10 px-1">creatorWallet</code> in{' '}
-            <code className="rounded bg-driftwood/10 px-1">src/config.ts</code> to your pump.fun
-            wallet and every coin you launch from it shows up here automatically — no manual
-            registration.
-          </>
-        ) : (
-          <>
-            Your creator wallet has no coins yet. The moment you launch one on pump.fun, it appears
-            here live.
-          </>
-        )}
+        Register your coins in the playground — set your pump.fun creator wallet under{' '}
+        <span className="font-bold text-deepset">Connections → Tracked coins</span> and every coin
+        you launch from it appears here automatically.
       </p>
-      <a
-        href="https://pump.fun"
-        target="_blank"
-        rel="noopener noreferrer"
+      <Link
+        to="/playground"
         className="mt-6 inline-block rounded-full bg-burnt px-5 py-2 text-sm font-bold text-salt hover:bg-dusk"
       >
-        Launch on pump.fun ↗
-      </a>
+        Open the playground →
+      </Link>
     </div>
   )
 }

@@ -31,6 +31,26 @@ export interface Profile {
 
 const userPk = (sub: string) => `USER#${sub}`
 
+// ── tracked-coins registry (single site-wide item) ──────────────────────────
+
+export interface Registry {
+  ownerSub?: string
+  creatorWallet?: string | null
+  mints?: string[]
+  updatedAt?: string
+}
+
+const REGISTRY_KEY = { pk: 'SITE', sk: 'REGISTRY' }
+
+export async function getRegistry(): Promise<Registry> {
+  const r = await doc.send(new GetCommand({ TableName: TABLE, Key: REGISTRY_KEY }))
+  return (r.Item as Registry | undefined) ?? {}
+}
+
+export async function putRegistry(reg: Registry): Promise<void> {
+  await doc.send(new PutCommand({ TableName: TABLE, Item: { ...REGISTRY_KEY, ...reg } }))
+}
+
 export async function getProfile(sub: string): Promise<Profile> {
   const r = await doc.send(
     new GetCommand({ TableName: TABLE, Key: { pk: userPk(sub), sk: 'PROFILE' } }),
