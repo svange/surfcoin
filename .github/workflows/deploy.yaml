@@ -80,10 +80,14 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
-      - name: License check (fail on copyleft)
+      - name: License check (fail on strong copyleft)
+        # Fails on strong copyleft (GPL/AGPL/SSPL) that would force disclosing our
+        # own source. LGPL is permitted — the only LGPL dep is rpc-websockets,
+        # pulled in transitively by @solana/web3.js and used as an unmodified
+        # bundled library (see .github/.ai-compliance.yaml).
         run: |
           npx --yes license-checker --production --summary --excludePrivatePackages \
-            --failOn 'GPL-1.0-only;GPL-1.0-or-later;GPL-2.0-only;GPL-2.0-or-later;GPL-3.0-only;GPL-3.0-or-later;AGPL-1.0-only;AGPL-1.0-or-later;AGPL-3.0-only;AGPL-3.0-or-later;LGPL-2.0-only;LGPL-2.1-only;LGPL-3.0-only;SSPL-1.0'
+            --failOn 'GPL-1.0-only;GPL-1.0-or-later;GPL-2.0-only;GPL-2.0-or-later;GPL-3.0-only;GPL-3.0-or-later;AGPL-1.0-only;AGPL-1.0-or-later;AGPL-3.0-only;AGPL-3.0-or-later;SSPL-1.0'
 
   build-validation:
     name: Build validation
