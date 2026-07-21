@@ -2,6 +2,8 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 } from 'aws-lambda'
 import type {
   ActivityEntry,
+  AdminGroupChangeRequest,
+  AdminUsersResponse,
   AutopilotRule,
   ClaimFeesRequest,
   LinkPumpPortalRequest,
@@ -17,6 +19,7 @@ import type {
   TradeSubmitRequest,
 } from '../../shared/types'
 import { runTick } from './autopilot'
+import { addToGroup, listUsersWithGroups, removeFromGroup } from './cognito'
 import {
   DEFAULT_SETTINGS,
   deleteRule,
@@ -82,6 +85,16 @@ export const handler = async (event: LambdaEvent): Promise<APIGatewayProxyResult
     }
     const sub = http.requestContext.authorizer?.jwt?.claims?.sub
     if (typeof sub !== 'string' || !sub) throw new HttpError(401, 'no subject claim')
+    // The JWT authorizer only validates the token — role enforcement is here.
+    const groups = groupsFromClaims(http.requestContext.authorizer?.jwt?.claims)
+    const isAdmin = groups.has('admins')
+    if (path === '/admin' || path.startsWith('/admin/')) {
+      if (!isAdmin) throw new HttpError(403, 'admin only')
+      return await adminRoute(sub, method, path, http)
+    }
+    if (!isAdmin && !groups.has('approved')) {
+      return json(403, { error: 'account pending approval', code: 'PENDING_APPROVAL' })
+    }
     return await route(sub, method, path, http)
   } catch (e) {
     if (e instanceof HttpError) return json(e.status, { error: e.message })
@@ -108,6 +121,52 @@ function intParam(v: string | undefined, fallback: number, max: number): number 
   const n = v === undefined ? fallback : Number(v)
   if (!Number.isInteger(n) || n < 1 || n > max) throw new HttpError(400, `limit must be 1–${max}`)
   return n
+}
+
+/**
+ * Normalize the cognito:groups claim. The HTTP API JWT authorizer stringifies
+ * array claims as "[admins approved]" (bracketed, space-separated, unquoted);
+ * a raw JWT carries a real JSON array. Handle both plus a plain string.
+ */
+function groupsFromClaims(claims: Record<string, unknown> | undefined): Set<string> {
+  const raw = claims?.['cognito:groups']
+  if (Array.isArray(raw)) return new Set(raw.map(String))
+  if (typeof raw !== 'string' || !raw) return new Set()
+  return new Set(
+    raw
+      .replace(/^\[|\]$/g, '')
+      .split(/[\s,]+/)
+      .filter(Boolean),
+  )
+}
+
+// ── admin: user management (requires the admins group) ───────────────────────
+async function adminRoute(
+  sub: string,
+  method: string,
+  path: string,
+  event: APIGatewayProxyEventV2WithJWTAuthorizer,
+): Promise<APIGatewayProxyResultV2> {
+  if (`${method} ${path}` === 'GET /admin/users') {
+    return json(200, { users: await listUsersWithGroups() } satisfies AdminUsersResponse)
+  }
+
+  // In this pool the Cognito Username is the sub UUID, so it doubles as the id.
+  const m = method === 'POST' ? path.match(/^\/admin\/users\/([0-9a-f-]{36})\/groups$/) : null
+  if (m) {
+    const target = m[1]
+    const req = body<AdminGroupChangeRequest>(event)
+    if (req.group !== 'approved' && req.group !== 'admins') throw new HttpError(400, 'unknown group')
+    if (req.action !== 'add' && req.action !== 'remove') throw new HttpError(400, 'unknown action')
+    if (req.group === 'admins' && req.action === 'remove' && target === sub) {
+      throw new HttpError(400, 'cannot remove your own admin role')
+    }
+    if (req.action === 'add') await addToGroup(target, req.group)
+    else await removeFromGroup(target, req.group)
+    return json(200, { users: await listUsersWithGroups() } satisfies AdminUsersResponse)
+  }
+
+  throw new HttpError(404, `no admin route for ${method} ${path}`)
 }
 
 async function route(

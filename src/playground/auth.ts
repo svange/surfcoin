@@ -199,6 +199,20 @@ export async function currentTokens(): Promise<Tokens | null> {
   return refreshing
 }
 
+/**
+ * Refresh even if the access token hasn't expired yet. A refresh grant mints
+ * tokens with current group membership, so this is how a pending user picks
+ * up an approval without signing out and back in.
+ */
+export async function forceRefresh(): Promise<Tokens | null> {
+  const t = loadTokens()
+  if (!t) return null
+  refreshing ??= refreshTokens(t).finally(() => {
+    refreshing = null
+  })
+  return refreshing
+}
+
 export function signOut(): void {
   saveTokens(null)
   const params = new URLSearchParams({
@@ -208,12 +222,25 @@ export function signOut(): void {
   window.location.assign(`${runtime.cognitoDomain}/logout?${params}`)
 }
 
-/** Claims from the (already-verified-by-Cognito) id token. Display only. */
-export function idTokenClaims(t: Tokens): { email?: string; sub?: string } {
+function decodeJwtPayload(jwt: string): Record<string, unknown> {
   try {
-    const payload = t.idToken.split('.')[1]
+    const payload = jwt.split('.')[1]
     return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
   } catch {
     return {}
   }
+}
+
+/** Claims from the (already-verified-by-Cognito) id token. Display only. */
+export function idTokenClaims(t: Tokens): { email?: string; sub?: string } {
+  return decodeJwtPayload(t.idToken) as { email?: string; sub?: string }
+}
+
+/**
+ * Role groups from the access token, for UI gating only — the backend
+ * re-checks the same claim on every request.
+ */
+export function accessTokenGroups(t: Tokens): string[] {
+  const raw = decodeJwtPayload(t.accessToken)['cognito:groups']
+  return Array.isArray(raw) ? raw.map(String) : []
 }

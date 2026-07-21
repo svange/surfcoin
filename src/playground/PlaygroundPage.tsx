@@ -6,7 +6,7 @@ import { AuthProvider, useAuth } from './AuthContext'
 import { Dashboard } from './Dashboard'
 import { isPlaygroundConfigured } from './runtime'
 import { Spinner } from './ui'
-import { useApi } from './useApi'
+import { ApiError, useApi } from './useApi'
 
 function SignedOut() {
   const { login } = useAuth()
@@ -34,21 +34,77 @@ function SignedOut() {
   )
 }
 
+/**
+ * Signed in but not yet in the `approved` group. Approval lands in the token
+ * only on refresh, so poll (and offer a button) until the claim shows up.
+ */
+function PendingApproval() {
+  const { email, logout, recheckApproval } = useAuth()
+  const [checking, setChecking] = useState(false)
+
+  async function recheck() {
+    setChecking(true)
+    try {
+      await recheckApproval()
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      recheckApproval().catch(() => {})
+    }, 60_000)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return (
+    <>
+      <TopBar email={email} onLogout={logout} />
+      <div className="mx-auto max-w-xl px-4 py-24 text-center">
+        <h1 className="font-display text-4xl text-golden">Waiting on the tide</h1>
+        <p className="mt-4 font-mono text-sm text-seafoam">
+          Your account is pending approval. The shaper has to wave you into the bay before you can
+          paddle out — check back soon.
+        </p>
+        <button
+          type="button"
+          onClick={recheck}
+          disabled={checking}
+          className="mt-8 rounded-full border border-seafoam/40 px-6 py-2.5 font-mono text-xs text-seafoam transition-colors hover:bg-seafoam/10 disabled:opacity-40"
+        >
+          {checking ? 'checking…' : 'check again'}
+        </button>
+      </div>
+    </>
+  )
+}
+
 function LoadMe() {
   const api = useApi()
   const { email, logout } = useAuth()
   const [me, setMe] = useState<MeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     api<MeResponse>('/me')
       .then(m => !cancelled && setMe(m))
-      .catch((e: unknown) => !cancelled && setError(e instanceof Error ? e.message : String(e)))
+      .catch((e: unknown) => {
+        if (cancelled) return
+        // Token says approved but the backend disagrees (revoked, stale claim
+        // handling drift) — show the pending view rather than a raw error.
+        if (e instanceof ApiError && e.status === 403) setPending(true)
+        else setError(e instanceof Error ? e.message : String(e))
+      })
     return () => {
       cancelled = true
     }
   }, [api])
+
+  if (pending) return <PendingApproval />
 
   return (
     <>
@@ -89,11 +145,12 @@ function TopBar({ email, onLogout }: { email: string | null; onLogout: () => voi
 }
 
 function Gate() {
-  const { status } = useAuth()
+  const { status, isApproved } = useAuth()
   if (status === 'loading') {
     return <p className="py-24 text-center font-mono text-sm text-seafoam">checking the tide…</p>
   }
-  return status === 'signed-in' ? <LoadMe /> : <SignedOut />
+  if (status !== 'signed-in') return <SignedOut />
+  return isApproved ? <LoadMe /> : <PendingApproval />
 }
 
 export default function PlaygroundPage() {
