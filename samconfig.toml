@@ -6,6 +6,7 @@ version = 0.1
 [default.deploy.parameters]
 stack_name = "surfcoin"
 region = "us-east-1"
-resolve_s3 = true
 capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
 no_fail_on_empty_changeset = true
+# CI passes --s3-bucket + --role-arn explicitly (org-provisioned resources).
+# For a local deploy, add: --resolve-s3  (or --s3-bucket <your bucket>)

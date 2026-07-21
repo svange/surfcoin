@@ -19,14 +19,20 @@ Parameters:
   AliasDomainName:
     Type: String
     Default: surfcoin.aillc.link
-    Description: Convenience alias domain served by the same distribution.
+    Description: Optional convenience alias domain served by the same distribution.
   AliasHostedZoneId:
     Type: String
-    Description: Route53 hosted zone ID for the alias domain (surfcoin.aillc.link).
+    Default: ""
+    Description: >
+      Route53 hosted zone ID for the alias domain. Leave empty to serve only the
+      primary domain (the default in the dedicated prod account).
   CognitoDomainPrefix:
     Type: String
     Default: surfcoin-play
     Description: Globally unique (per region) Cognito hosted-login domain prefix.
+
+Conditions:
+  HasAlias: !Not [!Equals [!Ref AliasHostedZoneId, ""]]
 
 Globals:
   Function:
@@ -76,18 +82,24 @@ Resources:
       DomainName: !Ref DomainName
       SubjectAlternativeNames:
         - !Sub "www.${DomainName}"
-        - !Ref AliasDomainName
-        - !Sub "www.${AliasDomainName}"
+        - !If [HasAlias, !Ref AliasDomainName, !Ref "AWS::NoValue"]
+        - !If [HasAlias, !Sub "www.${AliasDomainName}", !Ref "AWS::NoValue"]
       ValidationMethod: DNS
       DomainValidationOptions:
         - DomainName: !Ref DomainName
           HostedZoneId: !Ref FailHostedZoneId
         - DomainName: !Sub "www.${DomainName}"
           HostedZoneId: !Ref FailHostedZoneId
-        - DomainName: !Ref AliasDomainName
-          HostedZoneId: !Ref AliasHostedZoneId
-        - DomainName: !Sub "www.${AliasDomainName}"
-          HostedZoneId: !Ref AliasHostedZoneId
+        - !If
+          - HasAlias
+          - DomainName: !Ref AliasDomainName
+            HostedZoneId: !Ref AliasHostedZoneId
+          - !Ref "AWS::NoValue"
+        - !If
+          - HasAlias
+          - DomainName: !Sub "www.${AliasDomainName}"
+            HostedZoneId: !Ref AliasHostedZoneId
+          - !Ref "AWS::NoValue"
 
   OriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
@@ -107,8 +119,8 @@ Resources:
         Aliases:
           - !Ref DomainName
           - !Sub "www.${DomainName}"
-          - !Ref AliasDomainName
-          - !Sub "www.${AliasDomainName}"
+          - !If [HasAlias, !Ref AliasDomainName, !Ref "AWS::NoValue"]
+          - !If [HasAlias, !Sub "www.${AliasDomainName}", !Ref "AWS::NoValue"]
         DefaultRootObject: index.html
         HttpVersion: http2and3
         PriceClass: PriceClass_100
@@ -169,9 +181,10 @@ Resources:
       Type: AAAA
       AliasTarget: { HostedZoneId: Z2FDTNDATAQYW2, DNSName: !GetAtt Distribution.DomainName }
 
-  # surfcoin.aillc.link (+www) — convenience alias
+  # surfcoin.aillc.link (+www) — optional convenience alias
   AliasApexRecord:
     Type: AWS::Route53::RecordSet
+    Condition: HasAlias
     Properties:
       HostedZoneId: !Ref AliasHostedZoneId
       Name: !Ref AliasDomainName
@@ -179,6 +192,7 @@ Resources:
       AliasTarget: { HostedZoneId: Z2FDTNDATAQYW2, DNSName: !GetAtt Distribution.DomainName }
   AliasApexRecordV6:
     Type: AWS::Route53::RecordSet
+    Condition: HasAlias
     Properties:
       HostedZoneId: !Ref AliasHostedZoneId
       Name: !Ref AliasDomainName
@@ -186,6 +200,7 @@ Resources:
       AliasTarget: { HostedZoneId: Z2FDTNDATAQYW2, DNSName: !GetAtt Distribution.DomainName }
   AliasWwwRecord:
     Type: AWS::Route53::RecordSet
+    Condition: HasAlias
     Properties:
       HostedZoneId: !Ref AliasHostedZoneId
       Name: !Sub "www.${AliasDomainName}"
@@ -193,6 +208,7 @@ Resources:
       AliasTarget: { HostedZoneId: Z2FDTNDATAQYW2, DNSName: !GetAtt Distribution.DomainName }
   AliasWwwRecordV6:
     Type: AWS::Route53::RecordSet
+    Condition: HasAlias
     Properties:
       HostedZoneId: !Ref AliasHostedZoneId
       Name: !Sub "www.${AliasDomainName}"
