@@ -9,14 +9,25 @@ import { useQuery } from './useApi'
 
 const INTERVALS = ['1m', '5m', '15m', '1h'] as const
 
+/** A buy/sell prefilled from elsewhere (e.g. the KOTH "Push to KOTH" action). */
+export interface TradeSeed {
+  mint: string
+  action: 'buy' | 'sell'
+  amount: string
+  /** bump to re-apply the same seed */
+  nonce: number
+}
+
 export function CoinDetail({
   coin,
   me,
+  seed,
   onNewRule,
   onActivity,
 }: {
   coin: PumpCoin
   me: MeResponse
+  seed?: TradeSeed | null
   onNewRule: (coin: PumpCoin) => void
   onActivity: () => void
 }) {
@@ -108,7 +119,7 @@ export function CoinDetail({
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Panel title="Trade">
-          <TradePanel coin={coin} me={me} onActivity={onActivity} />
+          <TradePanel coin={coin} me={me} seed={seed} onActivity={onActivity} />
           <div className="mt-3 border-t border-seafoam/10 pt-3">
             <Button variant="ghost" onClick={() => onNewRule(coin)}>
               + Autopilot rule for {coin.symbol}
