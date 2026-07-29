@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type {
   MeResponse,
   Pool,
@@ -6,6 +6,7 @@ import type {
   TradeBuildResponse,
   TradeResponse,
 } from '../../shared/types'
+import type { TradeSeed } from './CoinDetail'
 import { toast } from '../lib/toast'
 import { Button, Field, inputClass, TradeResult } from './ui'
 import { useApi } from './useApi'
@@ -25,10 +26,12 @@ const POOLS: Pool[] = ['auto', 'pump', 'pump-amm', 'raydium', 'bonk']
 export function TradePanel({
   coin,
   me,
+  seed,
   onActivity,
 }: {
   coin: PumpCoin
   me: MeResponse
+  seed?: TradeSeed | null
   onActivity: () => void
 }) {
   const api = useApi()
@@ -40,6 +43,16 @@ export function TradePanel({
   const [pool, setPool] = useState<Pool>('auto')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<TradeResponse | null>(null)
+
+  // Apply a seed (e.g. "Push to KOTH" prefills a SOL-denominated buy). Keyed on
+  // nonce so re-pushing the same amount re-applies it.
+  useEffect(() => {
+    if (!seed) return
+    setAction(seed.action)
+    setAmount(seed.amount)
+    if (seed.action === 'buy') setDenomSol(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed?.nonce])
 
   const params = () => ({
     action,

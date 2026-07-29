@@ -111,6 +111,13 @@ dry-run-by-default environment. Sign up with email (AWS Cognito), then:
 - **Trade desk** — pick any coin, see a live candlestick chart + recent trades,
   and place manual buys/sells (Lightning-key execution *or* local browser-wallet
   signing) with full control of amount, slippage, priority fee, and pool.
+- **King of the Hill** — a bonding-curve calculator (the shared pump.fun curve:
+  30 virtual SOL + 1,073,000,191 tokens, constant-product, graduating at 85 SOL)
+  that quotes tokens/price/impact/market-cap for any buy or sell, plus a live
+  tracker of *your* coins (Created + pinned mints): how far each is from the
+  ~$30k KOTH market cap and how much SOL a buy needs to push it there. **Push to
+  KOTH** prefills that buy straight into the trade desk. Curve math lives in
+  `src/lib/bondingCurve.ts`.
 - **Autopilot** — price/market-cap trigger rules ("buy 0.1 SOL when mcap falls to
   $X") evaluated once a minute by an EventBridge tick.
 - **API explorer** — raw GET passthrough to the pump.fun data hosts, host-locked

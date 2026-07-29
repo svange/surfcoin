@@ -4,18 +4,22 @@ import { ActivityPanel, type ActivityHandle } from './ActivityPanel'
 import { AdminUsersPanel } from './AdminUsersPanel'
 import { useAuth } from './AuthContext'
 import { AutopilotPanel } from './AutopilotPanel'
+import { BondingCurvePanel } from './BondingCurvePanel'
 import { ClaimFeesPanel } from './ClaimFeesPanel'
-import { CoinDetail } from './CoinDetail'
+import { CoinDetail, type TradeSeed } from './CoinDetail'
 import { CoinsPanel } from './CoinsPanel'
+import { KingOfTheHillPanel } from './KingOfTheHillPanel'
 import { LinkPanel } from './LinkPanel'
 import { RawExplorer } from './RawExplorer'
 import { TrackedCoinsPanel } from './TrackedCoinsPanel'
+import { useSolPrice } from './useSolPrice'
 import { Empty, Panel } from './ui'
 
-type Tab = 'trade' | 'autopilot' | 'explorer' | 'connections' | 'users'
+type Tab = 'trade' | 'koth' | 'autopilot' | 'explorer' | 'connections' | 'users'
 
 const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: 'trade', label: 'Trade desk' },
+  { id: 'koth', label: 'King of the Hill' },
   { id: 'autopilot', label: 'Autopilot' },
   { id: 'explorer', label: 'API explorer' },
   { id: 'connections', label: 'Connections' },
@@ -27,9 +31,18 @@ export function Dashboard({ me, onMe }: { me: MeResponse; onMe: (me: MeResponse)
   const [tab, setTab] = useState<Tab>(me.wallet || me.pumpPortal ? 'trade' : 'connections')
   const [selected, setSelected] = useState<PumpCoin | null>(null)
   const [ruleSeed, setRuleSeed] = useState<PumpCoin | null>(null)
+  const [tradeSeed, setTradeSeed] = useState<TradeSeed | null>(null)
+  const [solUsd, setSolUsd] = useSolPrice()
   const activityRef = useRef<ActivityHandle>(null)
 
   const notifyActivity = () => activityRef.current?.reload()
+
+  // KOTH "Push to KOTH" → select the coin, prefill a buy, jump to the trade desk.
+  const pushToKoth = (coin: PumpCoin, sol: number) => {
+    setSelected(coin)
+    setTradeSeed({ mint: coin.mint, action: 'buy', amount: sol.toFixed(4), nonce: Date.now() })
+    setTab('trade')
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
@@ -83,6 +96,7 @@ export function Dashboard({ me, onMe }: { me: MeResponse; onMe: (me: MeResponse)
               <CoinDetail
                 coin={selected}
                 me={me}
+                seed={tradeSeed && tradeSeed.mint === selected.mint ? tradeSeed : null}
                 onActivity={notifyActivity}
                 onNewRule={c => {
                   setRuleSeed(c)
@@ -99,6 +113,14 @@ export function Dashboard({ me, onMe }: { me: MeResponse; onMe: (me: MeResponse)
         </div>
       )}
 
+      {tab === 'koth' && (
+        <div className="space-y-5">
+          <KingOfTheHillPanel solUsd={solUsd} onPush={pushToKoth} />
+          <BondingCurvePanel solUsd={solUsd} />
+          <SolPriceNote solUsd={solUsd} onChange={setSolUsd} />
+        </div>
+      )}
+
       {tab === 'autopilot' && (
         <div className="grid gap-5 lg:grid-cols-2">
           <AutopilotPanel seed={ruleSeed} />
@@ -110,5 +132,23 @@ export function Dashboard({ me, onMe }: { me: MeResponse; onMe: (me: MeResponse)
 
       {tab === 'users' && isAdmin && <AdminUsersPanel />}
     </div>
+  )
+}
+
+/** Editable SOL/USD assumption shared by the KOTH tracker and the calculator. */
+function SolPriceNote({ solUsd, onChange }: { solUsd: number; onChange: (n: number) => void }) {
+  return (
+    <p className="text-center font-mono text-[11px] text-seafoam/50">
+      USD figures assume SOL ={' '}
+      <input
+        type="number"
+        value={solUsd}
+        min={0}
+        step={1}
+        onChange={e => onChange(Number(e.target.value) || 0)}
+        className="w-20 rounded border border-seafoam/25 bg-night/60 px-2 py-0.5 text-center font-mono text-salt outline-none focus:border-golden"
+      />{' '}
+      USD · live from pump.fun, editable
+    </p>
   )
 }
