@@ -96,6 +96,31 @@ If you ever need to publish the frontend by hand against the live stack:
 
 ---
 
+## Tests & CI evidence
+
+Every PR runs the merge gates: type-check + **lint** (ESLint), **security**
+(dependency audit, gitleaks, semgrep), **license** compliance, **build
+validation**, and **unit tests with an enforced coverage threshold**. These are
+required status checks on `main` (plus code-owner review), so nothing merges
+un-gated.
+
+```bash
+npm run lint            # ESLint static analysis
+npm test               # vitest unit tests
+npm run test:coverage  # vitest + coverage (thresholds fail the run)
+npm run audit:ci       # enforced high+ dependency audit
+npm run test:e2e       # Playwright e2e (set SITE_URL for a remote target)
+```
+
+**Browser e2e evidence.** After each deploy to `main`, Playwright runs against
+the live site and records a replayable report (video always, trace on failure).
+The report is published to GitHub Pages and always reflects the latest
+production run:
+
+- **Latest e2e report:** <https://svange.github.io/surfcoin/>
+
+---
+
 ## The Shaping Bay — pump.fun API playground
 
 `/playground` is a members-only sandbox for driving the pump.fun API in a safe,

@@ -34,6 +34,8 @@ jobs:
         run: |
           npx tsc -b
           npx tsc -p backend/tsconfig.json --noEmit
+      - name: Lint (ESLint static analysis)
+        run: npx eslint .
 
   security:
     name: Security
@@ -51,8 +53,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
-      - name: npm audit (high+)
-        run: npm audit --audit-level=high --omit=dev || true
+      - name: Dependency audit (high+, enforced)
+        # Enforcing gate — no suppression. Fails the build on any high/critical
+        # advisory in production deps. Reviewed, non-applicable advisories are
+        # documented in audit-ci.jsonc (not silently swallowed).
+        run: npx audit-ci --config audit-ci.jsonc
       - name: Gitleaks
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
@@ -111,10 +116,36 @@ jobs:
       - name: SAM validate
         run: sam validate --lint --region us-east-1
 
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft != true
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Unit tests + coverage (enforced threshold)
+        # vitest exits non-zero if the coverage thresholds in vitest.config.ts
+        # are breached — coverage is a real merge gate, not just collected.
+        run: npx vitest run --coverage
+      - name: Upload test report + coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unit-test-report
+          path: |
+            coverage/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 30
+
   deploy:
     name: Deploy to AWS
     runs-on: ubuntu-latest
-    needs: [code-quality, security, compliance, build-validation]
+    needs: [code-quality, security, compliance, build-validation, test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: production
@@ -175,6 +206,58 @@ jobs:
             --region "${{ vars.AWS_REGION }}" \
             --query "Stacks[0].Outputs[?OutputKey=='SiteUrl'].OutputValue" --output text)
           echo "site-url=${SITE_URL}" >> "$GITHUB_OUTPUT"
+
+  e2e:
+    name: Browser e2e (post-deploy)
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Run Playwright e2e against the live site
+        env:
+          SITE_URL: ${{ needs.deploy.outputs.site-url }}
+        run: npx playwright test --project=chromium
+      - name: Upload Playwright report artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          path: playwright-report/
+          if-no-files-found: warn
+          retention-days: 30
+      # Publish the report on always() — a failing run is exactly when the
+      # scrubbable video/trace timeline is worth having one click away.
+      - name: Configure Pages
+        if: always()
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+        with:
+          # Self-enable Pages (Actions source) on first run so the report has a
+          # home without a manual Settings toggle.
+          enablement: true
+      - name: Upload Pages artifact
+        if: always()
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: playwright-report
+      - name: Publish report to GitHub Pages
+        id: pages
+        if: always()
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
 
   smoke-tests:
     name: Smoke tests

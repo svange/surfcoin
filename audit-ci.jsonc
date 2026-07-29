@@ -1,0 +1,15 @@
+{
+  // Enforcing dependency vulnerability gate for CI (replaces `npm audit ... || true`).
+  // Fails the build on any high or critical advisory in *production* dependencies.
+  "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
+  "high": true,
+  "skip-dev": true,
+  "allowlist": [
+    // GHSA-qwww-vcr4-c8h2 — react-router RSC-mode CSRF (>=7.12.0 <8.3.0).
+    // Not exploitable here: surfcoin is a client-only SPA using <BrowserRouter>;
+    // it does not run React Router's RSC / server framework mode, which is the
+    // only affected surface. Reviewed 2026-07-29. Remove once react-router-dom
+    // ships a non-major fix (tracked by Renovate).
+    "GHSA-qwww-vcr4-c8h2"
+  ]
+}
