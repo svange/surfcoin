@@ -245,6 +245,10 @@ jobs:
       - name: Configure Pages
         if: always()
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+        with:
+          # Self-enable Pages (Actions source) on first run so the report has a
+          # home without a manual Settings toggle.
+          enablement: true
       - name: Upload Pages artifact
         if: always()
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
