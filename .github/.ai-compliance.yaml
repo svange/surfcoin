@@ -4,12 +4,15 @@
 # personal side-project, so it deviates from the canonical Python service shape.
 metadata:
   standards_version: "2026-04-22"
-  last_standardized: "2026-07-20"
+  last_standardized: "2026-07-29"
   last_standardized_by: "samuelvange@gmail.com"
   notes: >-
-    Node/Vite + SAM, not Python/uv. Single-environment (main -> production only);
-    no dev/staging branch. Lives in a shared sandbox account, so it uses its own
-    scoped deploy role rather than the org PIPELINE/CLOUDFORMATION execution roles.
+    Node/Vite + SAM, not Python/uv. Single-environment (main -> production only).
+    A `dev` integration branch exists, but there is no separate staging *deploy
+    target* — main deploys straight to production. Lives in a shared sandbox
+    account, so it uses its own scoped deploy role rather than the org
+    PIPELINE/CLOUDFORMATION execution roles. Merge gates are enforced by the
+    default-branch ruleset (required checks + code-owner review).
 
 overrides:
   deploy.oidc_trust_scoped:
@@ -35,4 +38,21 @@ disabled_checks:
   - id: deploy.health_probe
     reason: "Static marketing site; smoke test checks the homepage + /playground return 200 instead of a /health endpoint."
     created_at: 2026-07-20
+    approved_by: "samuelvange@gmail.com"
+  - id: ci.promotion_gated_on_staging
+    reason: >-
+      No separate staging deploy target exists. This is a single-environment
+      side project: main deploys directly to production. Post-deploy acceptance
+      (Playwright e2e + smoke tests) runs against the production SHA after each
+      merge; there is no staging environment for a same-SHA pre-promotion gate,
+      so the "staging acceptance before promotion" pattern does not apply.
+    created_at: 2026-07-29
+    approved_by: "samuelvange@gmail.com"
+  - id: ops.staging_seeded
+    reason: >-
+      No staging environment to seed (single-environment side project). The
+      production data plane is real user state (Cognito accounts, linked keys)
+      and must not be seeded with fixtures; playground trading is dry-run by
+      default via the liveTrading safety gate, so no seeded test data is needed.
+    created_at: 2026-07-29
     approved_by: "samuelvange@gmail.com"

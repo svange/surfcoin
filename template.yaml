@@ -30,6 +30,13 @@ Parameters:
     Type: String
     Default: surfcoin-play
     Description: Globally unique (per region) Cognito hosted-login domain prefix.
+  AlarmEmail:
+    Type: String
+    Default: samuelvange@gmail.com
+    Description: >
+      Address subscribed to the operational-alarm SNS topic. Confirm the SNS
+      subscription email once after the first deploy. Override per environment
+      via a stack parameter if a shared inbox is preferred.
 
 Conditions:
   HasAlias: !Not [!Equals [!Ref AliasHostedZoneId, ""]]
@@ -502,6 +509,151 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt AutopilotTick.Arn
 
+  # ── Observability: admin-notifying alarms + dashboard ───────────────────────
+  # Alarms notify a human via SNS email; the dashboard gives at-a-glance health.
+  # Provisioned in IaC so incident visibility exists by construction.
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${AWS::StackName}-alarms"
+      DisplayName: surfcoin operational alarms
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlarmEmail
+
+  ApiErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-api-errors"
+      AlarmDescription: The API Lambda is returning function errors.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApiFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  ApiThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-api-throttles"
+      AlarmDescription: The API Lambda is being throttled (concurrency exhausted).
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApiFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  ApiLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-api-latency"
+      AlarmDescription: API Lambda p95 duration is approaching the 30s timeout.
+      Namespace: AWS/Lambda
+      MetricName: Duration
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApiFunction
+      ExtendedStatistic: p95
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 10000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  HttpApi5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-http-5xx"
+      AlarmDescription: The HTTP API is returning 5xx responses.
+      Namespace: AWS/ApiGateway
+      MetricName: 5xx
+      Dimensions:
+        - Name: ApiId
+          Value: !Ref HttpApi
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${AWS::StackName}"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric", "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "API Lambda — invocations / errors / throttles",
+                "region": "${AWS::Region}", "stat": "Sum", "period": 300,
+                "metrics": [
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "${ApiFunction}" ],
+                  [ "AWS/Lambda", "Errors", "FunctionName", "${ApiFunction}" ],
+                  [ "AWS/Lambda", "Throttles", "FunctionName", "${ApiFunction}" ]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "API Lambda — duration (ms)",
+                "region": "${AWS::Region}", "period": 300,
+                "metrics": [
+                  [ "AWS/Lambda", "Duration", "FunctionName", "${ApiFunction}", { "stat": "p50", "label": "p50" } ],
+                  [ "AWS/Lambda", "Duration", "FunctionName", "${ApiFunction}", { "stat": "p95", "label": "p95" } ],
+                  [ "AWS/Lambda", "Duration", "FunctionName", "${ApiFunction}", { "stat": "Maximum", "label": "max" } ]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 0, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "title": "HTTP API — requests / 4xx / 5xx",
+                "region": "${AWS::Region}", "stat": "Sum", "period": 300,
+                "metrics": [
+                  [ "AWS/ApiGateway", "Count", "ApiId", "${HttpApi}" ],
+                  [ "AWS/ApiGateway", "4xx", "ApiId", "${HttpApi}" ],
+                  [ "AWS/ApiGateway", "5xx", "ApiId", "${HttpApi}" ]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 12, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "title": "DynamoDB — consumed capacity / throttles",
+                "region": "${AWS::Region}", "stat": "Sum", "period": 300,
+                "metrics": [
+                  [ "AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "${Table}" ],
+                  [ "AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", "${Table}" ],
+                  [ "AWS/DynamoDB", "ThrottledRequests", "TableName", "${Table}" ]
+                ]
+              }
+            }
+          ]
+        }
+
 Outputs:
   SiteUrl:
     Value: !Sub "https://${DomainName}"
@@ -519,3 +671,6 @@ Outputs:
     Value: !GetAtt HttpApi.ApiEndpoint
   TableName:
     Value: !Ref Table
+  AlarmTopicArn:
+    Value: !Ref AlarmTopic
+    Description: SNS topic that fan-outs operational alarms to the admin email.

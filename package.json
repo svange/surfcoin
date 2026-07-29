@@ -8,7 +8,12 @@
     "build": "tsc -b && vite build",
     "build:backend": "tsc -p backend/tsconfig.json --noEmit && esbuild backend/src/index.ts --bundle --platform=node --target=node22 --format=cjs --outfile=backend/dist/index.js --minify",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
-    "publish:frontend": "bash scripts/publish-frontend.sh"
+    "publish:frontend": "bash scripts/publish-frontend.sh",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "audit:ci": "audit-ci --config audit-ci.jsonc"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
@@ -21,16 +26,25 @@
     "@aws-sdk/client-dynamodb": "^3.1090.0",
     "@aws-sdk/client-kms": "^3.1090.0",
     "@aws-sdk/lib-dynamodb": "^3.1090.0",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.0",
     "@tailwindcss/vite": "^4.1.0",
     "@types/aws-lambda": "^8.10.162",
     "@types/node": "^26.1.1",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "audit-ci": "^7.1.0",
     "bs58": "^6.0.0",
     "esbuild": "^0.28.1",
+    "eslint": "^10.8.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.8.0",
     "tailwindcss": "^4.1.0",
     "typescript": "~5.9.0",
-    "vite": "^7.1.0"
+    "typescript-eslint": "^8.65.0",
+    "vite": "^7.1.0",
+    "vitest": "^4.1.10"
   }
 }

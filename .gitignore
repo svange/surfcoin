@@ -6,3 +6,7 @@ dist/
 .DS_Store
 *.tsbuildinfo
 backend/dist/
+coverage/
+test-results/
+playwright-report/
+playwright/.cache/

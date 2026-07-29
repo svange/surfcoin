@@ -1,0 +1,84 @@
+name: Scheduled maintenance
+
+# Self-healing / decay detection beyond dependency updates (Renovate handles those).
+# A cron job exercises the live system on a schedule and auto-triages failures by
+# opening (or refreshing) an incident issue, and auto-resolves it when healthy
+# again — so routine breakage is noticed and tracked without a human watching.
+on:
+  schedule:
+    - cron: "23 8 * * *" # daily, 08:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: scheduled-maintenance
+  cancel-in-progress: false
+
+env:
+  SITE_URL: https://surfcoin.fail
+  INCIDENT_LABEL: incident
+  INCIDENT_TITLE: "🚨 Scheduled health check failing"
+
+jobs:
+  health-check:
+    name: Health check + auto-triage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe live site + public routes
+        id: probe
+        run: |
+          set -uo pipefail
+          fail=0
+          report=""
+          for path in "/" "/playground" "/coins"; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 25 "${SITE_URL}${path}" || echo "000")
+            line="GET ${path} -> ${code}"
+            echo "$line"
+            report="${report}\n- \`${path}\` → ${code}"
+            [ "$code" = "200" ] || fail=1
+          done
+          {
+            echo "failed=${fail}"
+            echo "report<<EOF"
+            echo -e "${report}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or refresh incident issue on failure
+        if: steps.probe.outputs.failed == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh label create "$INCIDENT_LABEL" -R "$REPO" -c FBCA04 -d "Automated incident from scheduled maintenance" 2>/dev/null || true
+          existing=$(gh issue list -R "$REPO" --state open --label "$INCIDENT_LABEL" \
+            --search "in:title $INCIDENT_TITLE" --json number --jq '.[0].number // empty')
+          body=$(printf 'Scheduled health check found one or more routes unhealthy.\n%b\n\nRun: %s' "${{ steps.probe.outputs.report }}" "$RUN_URL")
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" -R "$REPO" --body "$body"
+          else
+            gh issue create -R "$REPO" --title "$INCIDENT_TITLE" --label "$INCIDENT_LABEL" --body "$body"
+          fi
+
+      - name: Auto-resolve incident issue when healthy
+        if: steps.probe.outputs.failed == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh issue list -R "$REPO" --state open --label "$INCIDENT_LABEL" \
+            --search "in:title $INCIDENT_TITLE" --json number --jq '.[].number' | while read -r n; do
+            [ -n "$n" ] || continue
+            gh issue comment "$n" -R "$REPO" --body "Health check recovered — all monitored routes returned 200. Closing."
+            gh issue close "$n" -R "$REPO" --reason completed
+          done
+
+      - name: Fail the run if unhealthy
+        if: steps.probe.outputs.failed == '1'
+        run: exit 1
