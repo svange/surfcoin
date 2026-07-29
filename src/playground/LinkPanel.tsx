@@ -204,7 +204,8 @@ function TradingSettings({ me, onChange }: { me: MeResponse; onChange: (me: MeRe
             danger
           />
           <p className="font-mono text-[10px] text-seafoam/50">
-            Off = every trade is simulated, no matter what a button says. The master safety.
+            Off = Lightning trades and fee claims run as dry runs; wallet-signed trades are
+            refused (no dry-run form). The master safety.
           </p>
         </div>
         <div className="space-y-1">

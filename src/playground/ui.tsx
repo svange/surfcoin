@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { TradeResponse } from '../../shared/types'
 
 /** Chart palette — validated dark-surface categorical set (dataviz skill).
  *  aqua=up/positive, coral=down/negative, gold=neutral/volume. */
@@ -112,6 +113,33 @@ export function Toggle({
         {label}
       </span>
     </button>
+  )
+}
+
+/** Result readout for trade-shaped responses (trades, fee claims). */
+export function TradeResult({ result }: { result: TradeResponse }) {
+  return (
+    <div className="rounded-lg border border-seafoam/20 bg-night/80 p-3">
+      <p className="font-mono text-[11px]">
+        <span className={result.ok ? 'text-seafoam' : 'text-coral'}>
+          {result.dryRun ? 'DRY RUN' : result.ok ? 'SENT' : 'ERROR'}
+        </span>
+        {result.error && <span className="text-coral"> — {result.error}</span>}
+      </p>
+      {result.signature && (
+        <a
+          href={`https://solscan.io/tx/${result.signature}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-1 block truncate font-mono text-[10px] text-golden underline"
+        >
+          {result.signature}
+        </a>
+      )}
+      <pre className="mt-2 max-h-40 overflow-auto font-mono text-[10px] text-seafoam/70">
+        {JSON.stringify(result.sent, null, 2)}
+      </pre>
+    </div>
   )
 }
 
