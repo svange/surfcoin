@@ -17,7 +17,7 @@ export const PUMP_HOSTS = {
   advanced: 'https://advanced-api-v2.pump.fun',
 } as const
 
-const UA = 'surfcoin-playground/0.1 (+https://surfcoin.aillc.link)'
+const UA = 'surfcoin-playground/0.1 (+https://surfcoin.fail)'
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetchWithTimeout(url, { headers: { accept: 'application/json', 'user-agent': UA } })

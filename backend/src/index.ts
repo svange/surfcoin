@@ -64,7 +64,7 @@ import {
   verifyWalletSignature,
 } from './solana'
 
-const SITE = process.env.SITE_ORIGIN ?? 'https://surfcoin.aillc.link'
+const SITE = process.env.SITE_ORIGIN ?? 'https://surfcoin.fail'
 
 type TickEvent = { source: 'autopilot-tick' }
 type LambdaEvent = APIGatewayProxyEventV2WithJWTAuthorizer | TickEvent
