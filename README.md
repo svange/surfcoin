@@ -41,6 +41,7 @@ run only on push to `main`. Live status: the badge above → the
 | [`README.md`](README.md) | This file — orientation, local dev, launch, deploy, testing. |
 | [`CLAUDE.md`](CLAUDE.md) | Agent/contributor working notes: architecture invariants, CI gates, ship workflow. |
 | [`docs/playground-design.md`](docs/playground-design.md) | The Shaping Bay: architecture, security stance, DynamoDB layout, API routes. |
+| [`docs/environment-config.md`](docs/environment-config.md) | Environment config model: the committed `.env.example` source + `npm run sync:env`, and which values are retrieved dynamically in-pipeline. |
 | [`.github/.ai-compliance.yaml`](.github/.ai-compliance.yaml) | Per-repo compliance overrides + documented, dated exceptions. |
 
 ### Branches & environments
@@ -123,9 +124,17 @@ anymore.
   forever, `index.html` never cached), and invalidates CloudFront. Then
   smoke-tests hit the live site.
 
-Config lives in GitHub **repo variables** (`AWS_DEPLOY_ROLE_ARN`, the two
-`*_HOSTED_ZONE_ID`s, `STACK_NAME`, domains, `COGNITO_DOMAIN_PREFIX`); no AWS keys
-are stored. Deploys are gated on the `production` environment.
+Config converges from a **committed source of truth**:
+[`.env.example`](.env.example) enumerates every operator-managed GitHub variable
+and secret the pipeline reads (`AWS_DEPLOY_ROLE_ARN`, `CFN_EXEC_ROLE_ARN`,
+`ARTIFACTS_BUCKET`, `STACK_NAME`, `AWS_REGION`, `DOMAIN_NAME`,
+`FAIL_HOSTED_ZONE_ID`, `COGNITO_DOMAIN_PREFIX`, and the optional `GH_TOKEN`).
+Fill in a gitignored `.env` and push the values with `npm run sync:env -- --apply`
+instead of hand-editing them in the GitHub UI. No AWS keys are stored, and
+dynamic values (Cognito ids, site bucket, CloudFront distribution id) are
+retrieved from stack outputs in-pipeline — see
+[`docs/environment-config.md`](docs/environment-config.md). Deploys are gated on
+the `production` environment.
 
 All infra changes go through this flow — edit `template.yaml`, open a PR, merge.
 
@@ -242,12 +251,14 @@ backend/src/          # Lambda: router, db, pump.fun client, pumpportal, solana,
 public/               # favicon.svg, og.png, robots.txt
 template.yaml         # ONE SAM stack: site (S3/CloudFront/ACM/Route53) + backend
 samconfig.toml        # SAM deploy defaults
+.env.example          # committed template for pipeline vars/secrets (npm run sync:env)
 .github/workflows/
   deploy.yaml         # CI/CD: checks → sam deploy (OIDC) → publish SPA → smoke
   maintenance.yaml    # scheduled health check → auto-triaged incident issues
 scripts/
   publish-frontend.sh          # build SPA from stack outputs → sync → invalidate
   sync-playground-config.sh    # write runtime.ts from stack outputs
+  sync-env.sh                  # push committed env config (.env) to GitHub vars/secrets
 ```
 
 ---
