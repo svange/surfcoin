@@ -1,14 +1,59 @@
 # surfcoin.fail — $SURF
 
+[![CI/CD Pipeline](https://github.com/svange/surfcoin/actions/workflows/deploy.yaml/badge.svg)](https://github.com/svange/surfcoin/actions/workflows/deploy.yaml)
+[![Release](https://img.shields.io/github/v/release/svange/surfcoin?sort=semver&label=release)](https://github.com/svange/surfcoin/releases)
+
 > Surf's up. Expectations down.
 
-A single-page static site for $SURF, a Solana memecoin launching on pump.fun.
-70s surf-poster aesthetic, deadpan self-aware copy, honest tokenomics. Built to
-run entirely pre-launch and flip to "live" the moment the coin exists — by
-changing exactly one value.
+**What this is.** The marketing site *and* playground for **$SURF**, a Solana
+memecoin on pump.fun. The public site (`/`, `/coins`) is a single-page app with
+a 70s surf-poster aesthetic, deadpan copy, and honest tokenomics; a members-only
+**playground** (`/playground`, "The Shaping Bay") drives the pump.fun API from a
+safe, dry-run-by-default cockpit. Built to run entirely pre-launch and flip to
+"live" the moment the coin exists — by changing exactly one value.
 
-Stack: **Vite + React 19 + Tailwind v4 + TypeScript**. No backend. Deploys to
-**AWS S3 + CloudFront**.
+**Stack.** Vite + React 19 + Tailwind v4 + TypeScript SPA, plus one Node 22
+Lambda backend (`backend/`). Shipped as a single **AWS SAM** stack — S3 +
+CloudFront for the site, API Gateway (HTTP API) + DynamoDB + KMS + Cognito for
+the playground — to `us-east-1` by the GitHub Actions pipeline.
+
+---
+
+## Orientation
+
+### Pipeline & artifacts
+
+CI/CD is one workflow: [`.github/workflows/deploy.yaml`](.github/workflows/deploy.yaml)
+(“CI/CD Pipeline”). PR runs are the merge gates; deploy, e2e, smoke, and release
+run only on push to `main`. Live status: the badge above → the
+[Actions page](https://github.com/svange/surfcoin/actions/workflows/deploy.yaml).
+
+| Artifact | Produced by | Where to find it |
+| --- | --- | --- |
+| **Releases + changelog** | `release` job (`semantic-release`), each push to `main` | <https://github.com/svange/surfcoin/releases> (latest `v1.0.0`) |
+| **Browser e2e report** — Playwright, video always + trace on failure | `e2e` job, post-deploy | GitHub Pages mirror <https://svange.github.io/surfcoin/> *(publishing pending a one-time Pages enablement — [#15](https://github.com/svange/surfcoin/issues/15))*; per-run `playwright-report` artifact on the [run page](https://github.com/svange/surfcoin/actions/workflows/deploy.yaml) |
+| **Unit tests + coverage** | `test` job (`vitest --coverage`) | `unit-test-report` artifact on each run page |
+
+### Documentation
+
+| Doc | What it covers |
+| --- | --- |
+| [`README.md`](README.md) | This file — orientation, local dev, launch, deploy, testing. |
+| [`CLAUDE.md`](CLAUDE.md) | Agent/contributor working notes: architecture invariants, CI gates, ship workflow. |
+| [`docs/playground-design.md`](docs/playground-design.md) | The Shaping Bay: architecture, security stance, DynamoDB layout, API routes. |
+| [`.github/.ai-compliance.yaml`](.github/.ai-compliance.yaml) | Per-repo compliance overrides + documented, dated exceptions. |
+
+### Branches & environments
+
+Single-environment project: `main` deploys straight to production. A `dev`
+branch exists for integration work, but there is no separate staging deploy
+target.
+
+| Ref | CI that runs | Deploys to |
+| --- | --- | --- |
+| PR → `main` | Merge gates — Code quality, Security, Compliance, Build validation, Tests (all required checks + code-owner review) | — (no deploy) |
+| `main` (push) | Gates → `sam deploy` → publish SPA → post-deploy e2e + smoke tests → `semantic-release` | **production** — <https://surfcoin.fail> (alias `surfcoin.aillc.link`) |
+| `dev` | No pipeline trigger of its own — open a PR to `main` to run the gates | — (integration only) |
 
 ---
 
@@ -70,7 +115,8 @@ The whole app — static site **and** playground backend — is one SAM stack
 anymore.
 
 - **Open a PR** → the pipeline runs code-quality, security (gitleaks, semgrep,
-  npm audit) and build-validation (`sam validate` + frontend/backend builds).
+  dependency audit via `audit-ci`) and build-validation (`sam validate` +
+  frontend/backend builds).
 - **Merge to `main`** → the `deploy` job assumes the repo-scoped OIDC role
   (`surfcoin-deploy`), runs `sam deploy`, then builds the SPA against the fresh
   stack outputs and publishes it to the site bucket (hashed assets cached
@@ -113,11 +159,12 @@ npm run test:e2e       # Playwright e2e (set SITE_URL for a remote target)
 ```
 
 **Browser e2e evidence.** After each deploy to `main`, Playwright runs against
-the live site and records a replayable report (video always, trace on failure).
-The report is published to GitHub Pages and always reflects the latest
-production run:
-
-- **Latest e2e report:** <https://svange.github.io/surfcoin/>
+the live site and records a replayable report (video always, trace on failure),
+uploaded as the `playwright-report` workflow artifact. The pipeline also mirrors
+it to GitHub Pages at <https://svange.github.io/surfcoin/> — that mirror is
+**pending a one-time Pages enablement** ([#15](https://github.com/svange/surfcoin/issues/15));
+until it's on, grab the `playwright-report` artifact from the run page. See the
+[Pipeline & artifacts](#pipeline--artifacts) table above.
 
 ---
 
@@ -175,6 +222,9 @@ The frontend reads its Cognito/API identifiers from `src/playground/runtime.ts`
 outputs before each build; to refresh it locally run
 `AWS_PROFILE=sandbox bash scripts/sync-playground-config.sh`.
 
+See [`docs/playground-design.md`](docs/playground-design.md) for the full
+architecture, security stance, DynamoDB layout, and API-route reference.
+
 ## Project layout
 
 ```
@@ -194,6 +244,7 @@ template.yaml         # ONE SAM stack: site (S3/CloudFront/ACM/Route53) + backen
 samconfig.toml        # SAM deploy defaults
 .github/workflows/
   deploy.yaml         # CI/CD: checks → sam deploy (OIDC) → publish SPA → smoke
+  maintenance.yaml    # scheduled health check → auto-triaged incident issues
 scripts/
   publish-frontend.sh          # build SPA from stack outputs → sync → invalidate
   sync-playground-config.sh    # write runtime.ts from stack outputs
