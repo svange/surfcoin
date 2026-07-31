@@ -9,6 +9,7 @@
     "build:backend": "tsc -p backend/tsconfig.json --noEmit && esbuild backend/src/index.ts --bundle --platform=node --target=node22 --format=cjs --outfile=backend/dist/index.js --minify",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
     "publish:frontend": "bash scripts/publish-frontend.sh",
+    "sync:env": "bash scripts/sync-env.sh",
     "lint": "eslint .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
