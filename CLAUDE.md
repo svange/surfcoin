@@ -125,3 +125,16 @@ Build validation, Tests) as status checks **and** requires code-owner review
     smoke test in place of a `/health` endpoint.
   When you genuinely can't satisfy a standard, add a **justified, dated,
   approved** exception here rather than gaming the check.
+
+## PR and merge conventions
+
+- **Arm auto-merge at PR creation**: `gh pr create ... && gh pr merge --squash --auto`.
+  The `main branch protection` ruleset requires the five CI gates (Code quality,
+  Security, Compliance, Build validation, Tests) plus a pull request, so an armed
+  PR merges itself when CI goes green. An un-armed PR strands the work.
+- Zero human approvals are required by design (solo-operator repo): CI gates are
+  the merge protection, review is not. The owner's Admin bypass is break-glass
+  only.
+- `.github/rulesets/main-branch-protection.json` mirrors the APPLIED ruleset.
+  If you change one, change the other in the same PR (drift here means the
+  committed file lies about the real gate).
