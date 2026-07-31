@@ -44,10 +44,16 @@ EventBridge rate(1 minute) ──► same Lambda ("autopilot-tick") — rule eng
 - All `/api/*` routes sit behind the Cognito JWT authorizer; per-user data is
   keyed by the token's `sub`, so users can only reach their own rows.
 - **Roles** live in Cognito user-pool groups (`approved`, `admins`), read from
-  the `cognito:groups` claim in the Lambda (the authorizer doesn't check
-  groups). New signups have no group = pending: they see only an approval-
-  pending page and every `/api` call 403s until an admin approves them from
-  the Users tab. `GET /public/*` (the `/coins` page) is unauthenticated.
+  the `cognito:groups` claim in the Lambda (the authorizer only validates the
+  token; it doesn't check groups). New signups have no group = pending: they see
+  only an approval-pending page and every `/api` call 403s
+  (`code: PENDING_APPROVAL`) until an admin approves them from the Users tab.
+  The decision lives in one place — `backend/src/rbac.ts` — and is unit-tested
+  (`rbac.test.ts`, under the enforced coverage gate) so the gate can't silently
+  regress. The gate is enforced on **both** capability paths: the synchronous
+  `/api` handler and the async autopilot tick (below), so revoking a user stops
+  their autopilot too, not just their API access. `GET /public/*` (the `/coins`
+  page) is unauthenticated.
 
 ## DynamoDB layout (single table, pk/sk)
 
@@ -60,7 +66,10 @@ EventBridge rate(1 minute) ──► same Lambda ("autopilot-tick") — rule eng
 | SITE         | REGISTRY        | tracked-coins registry (ownerSub, creatorWallet, mints) |
 
 The autopilot tick finds work with a deliberate table Scan for enabled rules
-(tiny table) — there is no per-user marker row.
+(tiny table) — there is no per-user marker row. Before evaluating anything it
+filters those rules to owners currently in the `approved`/`admins` groups
+(`filterApprovedOwners`), and fails closed if that membership lookup errors, so
+a revoked user's rules stop firing.
 
 ## API routes (all JWT, under /api)
 
