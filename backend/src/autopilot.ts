@@ -7,9 +7,11 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { ActivityEntry, AutopilotRule } from '../../shared/types'
+import { listApprovedSubs } from './cognito'
 import { claimRuleFire, DEFAULT_SETTINGS, getProfile, putActivity, putRule, scanEnabledRules } from './db'
 import { getCoin } from './pump'
 import { decryptApiKey, lightningTrade, toPortalBody } from './pumpportal'
+import { filterApprovedOwners } from './rbac'
 
 /** A repeating rule may fire at most once per this window. */
 const REFIRE_COOLDOWN_MS = 5 * 60_000
@@ -29,7 +31,22 @@ function triggerHit(rule: AutopilotRule, priceUsd: number | null, mcapUsd: numbe
 }
 
 export async function runTick(): Promise<void> {
-  const rules = await scanEnabledRules()
+  const enabled = await scanEnabledRules()
+  if (enabled.length === 0) return
+
+  // Enforce the approved-role gate on the async path too: a user removed from
+  // the `approved`/`admins` groups must lose autopilot, not just the synchronous
+  // API. Fail CLOSED — if the membership lookup fails we skip this tick rather
+  // than fire for owners we can't verify. Autopilot is dry-run by default and
+  // ticks every minute, so a skipped minute is harmless; the next tick retries.
+  let approvedSubs: Set<string>
+  try {
+    approvedSubs = await listApprovedSubs()
+  } catch (e) {
+    console.error('approved-membership lookup failed; skipping tick', e)
+    return
+  }
+  const rules = filterApprovedOwners(enabled, approvedSubs)
   if (rules.length === 0) return
 
   const profiles = new Map<string, Awaited<ReturnType<typeof getProfile>>>()

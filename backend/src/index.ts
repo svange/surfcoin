@@ -37,6 +37,7 @@ import {
   type Profile,
 } from './db'
 import { HttpError, json, noContent } from './http'
+import { authorize, isAdminPath, parseGroups } from './rbac'
 import {
   getCandles,
   getCoin,
@@ -85,16 +86,12 @@ export const handler = async (event: LambdaEvent): Promise<APIGatewayProxyResult
     }
     const sub = http.requestContext.authorizer?.jwt?.claims?.sub
     if (typeof sub !== 'string' || !sub) throw new HttpError(401, 'no subject claim')
-    // The JWT authorizer only validates the token — role enforcement is here.
-    const groups = groupsFromClaims(http.requestContext.authorizer?.jwt?.claims)
-    const isAdmin = groups.has('admins')
-    if (path === '/admin' || path.startsWith('/admin/')) {
-      if (!isAdmin) throw new HttpError(403, 'admin only')
-      return await adminRoute(sub, method, path, http)
-    }
-    if (!isAdmin && !groups.has('approved')) {
-      return json(403, { error: 'account pending approval', code: 'PENDING_APPROVAL' })
-    }
+    // The JWT authorizer only validates the token — the approved-role gate is
+    // enforced here (see rbac.ts, the single source of truth for the decision).
+    const groups = parseGroups(http.requestContext.authorizer?.jwt?.claims?.['cognito:groups'])
+    const decision = authorize(path, groups)
+    if (!decision.ok) return json(decision.status, decision.body)
+    if (isAdminPath(path)) return await adminRoute(sub, method, path, http)
     return await route(sub, method, path, http)
   } catch (e) {
     if (e instanceof HttpError) return json(e.status, { error: e.message })
@@ -121,23 +118,6 @@ function intParam(v: string | undefined, fallback: number, max: number): number 
   const n = v === undefined ? fallback : Number(v)
   if (!Number.isInteger(n) || n < 1 || n > max) throw new HttpError(400, `limit must be 1–${max}`)
   return n
-}
-
-/**
- * Normalize the cognito:groups claim. The HTTP API JWT authorizer stringifies
- * array claims as "[admins approved]" (bracketed, space-separated, unquoted);
- * a raw JWT carries a real JSON array. Handle both plus a plain string.
- */
-function groupsFromClaims(claims: Record<string, unknown> | undefined): Set<string> {
-  const raw = claims?.['cognito:groups']
-  if (Array.isArray(raw)) return new Set(raw.map(String))
-  if (typeof raw !== 'string' || !raw) return new Set()
-  return new Set(
-    raw
-      .replace(/^\[|\]$/g, '')
-      .split(/[\s,]+/)
-      .filter(Boolean),
-  )
 }
 
 // ── admin: user management (requires the admins group) ───────────────────────
