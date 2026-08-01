@@ -32,7 +32,7 @@ run only on push to `main`. Live status: the badge above → the
 | --- | --- | --- |
 | **Releases + changelog** | `release` job (`semantic-release`), each push to `main` | <https://github.com/svange/surfcoin/releases> (latest `v1.0.0`) |
 | **Browser e2e report** — Playwright, video always + trace on failure | `e2e` job, post-deploy | GitHub Pages mirror <https://svange.github.io/surfcoin/> (live; refreshed by every `main` deploy); per-run `playwright-report` artifact on the [run page](https://github.com/svange/surfcoin/actions/workflows/deploy.yaml) |
-| **Unit tests + coverage** | `test` job (`vitest --coverage`) | `unit-test-report` artifact on each run page |
+| **Unit tests + coverage** | `test` job (`vitest --coverage`) | Coverage report on GitHub Pages <https://svange.github.io/surfcoin/unit/> (live; refreshed by every `main` deploy); JUnit + lcov in the per-run `unit-test-report` artifact on the [run page](https://github.com/svange/surfcoin/actions/workflows/deploy.yaml) |
 
 ### Documentation
 
