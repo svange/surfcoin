@@ -70,7 +70,7 @@ merge gates; deploy/e2e/smoke/release only run on push to `main`.
 | **Build validation** | frontend + backend builds and `sam validate --lint`. |
 | **Tests** | `vitest run --coverage` — coverage thresholds **fail the build**; uploads the report artifact. |
 | **Deploy to AWS** | on `main` only: OIDC-assume `surfcoin-deploy`, `sam deploy`, publish SPA, invalidate CloudFront. |
-| **Browser e2e** | post-deploy Playwright against the live site; publishes the HTML report (video/trace) to GitHub Pages on `always()`. |
+| **Browser e2e** | post-deploy Playwright against the live site; publishes the HTML report (video/trace) to GitHub Pages on `always()`, with the unit-test coverage report folded into the same Pages deployment under `/unit/`. |
 | **Smoke tests / Release** | HTTP reachability check; `semantic-release`. |
 
 **Enforcement lives in a default-branch ruleset**, not just the workflow: the

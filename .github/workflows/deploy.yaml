@@ -240,7 +240,19 @@ jobs:
           path: playwright-report/
           if-no-files-found: warn
           retention-days: 30
-      # Publish the report on always() — a failing run is exactly when the
+      # GitHub Pages serves ONE deployment, owned by this job. Fold the
+      # unit-test coverage report into the same artifact under /unit/ so it gets
+      # a stable published URL (…/surfcoin/unit/) instead of only the ephemeral
+      # per-run `unit-test-report` download. Regenerated here from the deployed
+      # commit — the "Tests" gate already enforced it, this run only produces the
+      # report to publish — and nested next to the e2e report at the site root.
+      - name: Stage unit-test coverage report under /unit/
+        if: always()
+        run: |
+          npx vitest run --coverage
+          mkdir -p playwright-report/unit
+          cp -R coverage/. playwright-report/unit/
+      # Publish the reports on always() — a failing run is exactly when the
       # scrubbable video/trace timeline is worth having one click away.
       - name: Configure Pages
         if: always()
