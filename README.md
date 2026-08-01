@@ -31,7 +31,7 @@ run only on push to `main`. Live status: the badge above → the
 | Artifact | Produced by | Where to find it |
 | --- | --- | --- |
 | **Releases + changelog** | `release` job (`semantic-release`), each push to `main` | <https://github.com/svange/surfcoin/releases> (latest `v1.0.0`) |
-| **Browser e2e report** — Playwright, video always + trace on failure | `e2e` job, post-deploy | GitHub Pages mirror <https://svange.github.io/surfcoin/> *(publishing pending a one-time Pages enablement — [#15](https://github.com/svange/surfcoin/issues/15))*; per-run `playwright-report` artifact on the [run page](https://github.com/svange/surfcoin/actions/workflows/deploy.yaml) |
+| **Browser e2e report** — Playwright, video always + trace on failure | `e2e` job, post-deploy | GitHub Pages mirror <https://svange.github.io/surfcoin/> (live; refreshed by every `main` deploy); per-run `playwright-report` artifact on the [run page](https://github.com/svange/surfcoin/actions/workflows/deploy.yaml) |
 | **Unit tests + coverage** | `test` job (`vitest --coverage`) | `unit-test-report` artifact on each run page |
 
 ### Documentation
@@ -170,9 +170,9 @@ npm run test:e2e       # Playwright e2e (set SITE_URL for a remote target)
 **Browser e2e evidence.** After each deploy to `main`, Playwright runs against
 the live site and records a replayable report (video always, trace on failure),
 uploaded as the `playwright-report` workflow artifact. The pipeline also mirrors
-it to GitHub Pages at <https://svange.github.io/surfcoin/> — that mirror is
-**pending a one-time Pages enablement** ([#15](https://github.com/svange/surfcoin/issues/15));
-until it's on, grab the `playwright-report` artifact from the run page. See the
+it to GitHub Pages at <https://svange.github.io/surfcoin/> — the mirror is live
+and refreshed by every `main` deploy. For a specific historical run, grab the
+`playwright-report` artifact from that run's page. See the
 [Pipeline & artifacts](#pipeline--artifacts) table above.
 
 ---
