@@ -84,6 +84,35 @@ Build validation, Tests) as status checks **and** requires code-owner review
 - **Conventional commits** drive `semantic-release` (`fix:`/`feat:` → releases;
   `chore(deps-dev):`/`ci(deps):` → no release). Match the existing prefixes.
 
+## Dependency updates (`renovate.json5`)
+
+Renovate is the only thing that should be bumping dependencies routinely; hand
+bumps are for advisories it cannot resolve on its own. Config lives at the repo
+root and maps update types onto the commit prefixes above, so a security patch
+cuts a release and a dev-dep bump does not.
+
+Three things outside this repo have to be true for that to work, and none of
+them are visible in the config — if updates stop, check these before editing
+`renovate.json5`:
+
+1. **The hosted Renovate app has access to the repo.** Its liveness beacon is
+   the **Dependency Dashboard** issue: Renovate opens one on its first run and
+   reports config errors *only* there. No dashboard issue ⇒ Renovate is not
+   reaching the repo at all.
+2. **"Allow auto-merge" and squash merging are enabled** in repo settings.
+   `platformAutomerge` needs the former; `automergeStrategy: "squash"` needs the
+   latter, and squash is what keeps the `fix(deps):` subject on `main` where
+   `semantic-release` can read it (a merge commit would hide it).
+3. **The `main` ruleset does not demand a review `renovate[bot]` cannot give.**
+   `require_code_owner_review` + `CODEOWNERS = * @svange` holds every Renovate PR
+   for an approval no bot can obtain, so automerge never completes.
+
+Those are all operator-side settings — tracked in issue #25 with the exact steps.
+The `Dependency automation freshness` job in `.github/workflows/maintenance.yaml`
+watches for the failure mode: no Renovate PR or issue activity in
+`MAX_QUIET_DAYS` (30) opens an incident issue, and it auto-closes when updates
+flow again.
+
 ## Standard workflow to ship a change
 
 1. Branch off `main` (or `dev` for integration work).
@@ -114,7 +143,8 @@ Build validation, Tests) as status checks **and** requires code-owner review
   `npm audit ... || true`). It fails on any high/critical production advisory.
   A reviewed, non-applicable advisory goes in `allowlist` **with a comment
   explaining why** — never re-introduce blanket `|| true` / `continue-on-error`
-  suppression anywhere in CI.
+  suppression anywhere in CI. The allowlist is empty as of 2026-08-13: prefer a
+  targeted bump, and drop the entry as soon as a patched version exists.
 - **`react-hooks/set-state-in-effect`** is downgraded to a warning in
   `eslint.config.js` (deliberate state resets on dependency change). Real errors
   still fail the lint gate.

@@ -4,12 +4,16 @@
   "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
   "high": true,
   "skip-dev": true,
-  "allowlist": [
-    // GHSA-qwww-vcr4-c8h2 — react-router RSC-mode CSRF (>=7.12.0 <8.3.0).
-    // Not exploitable here: surfcoin is a client-only SPA using <BrowserRouter>;
-    // it does not run React Router's RSC / server framework mode, which is the
-    // only affected surface. Reviewed 2026-07-29. Remove once react-router-dom
-    // ships a non-major fix (tracked by Renovate).
-    "GHSA-qwww-vcr4-c8h2"
-  ]
+  // Empty by design. GHSA-qwww-vcr4-c8h2 (react-router RSC-mode CSRF) was
+  // allowlisted on 2026-07-29 while no non-major fix existed; react-router-dom
+  // 7.18.2 patches it, so the bump replaced the exception on 2026-08-13.
+  // Anything added back here needs the advisory id, why it does not apply to
+  // this app, and the date it was reviewed.
+  //
+  // Known residual below this gate's threshold (no allowlist needed, no fix
+  // published upstream): GHSA-w5hq-g745-h8pq, uuid <11.1.1, reached only as
+  // @solana/web3.js 1.98.4 -> jayson 4.3.0 -> uuid 8.3.2. Moderate, and the
+  // only "fix" npm offers is a bogus downgrade to @solana/web3.js 0.0.3.
+  // Renovate picks it up automatically once jayson or web3.js ships one.
+  "allowlist": []
 }
