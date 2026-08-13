@@ -21,6 +21,11 @@ env:
   SITE_URL: https://surfcoin.fail
   INCIDENT_LABEL: incident
   INCIDENT_TITLE: "🚨 Scheduled health check failing"
+  DEPS_INCIDENT_TITLE: "🚨 Dependency automation (Renovate) has gone silent"
+  # Renovate's own cadence here is weekly (Sunday) plus monthly lockfile
+  # maintenance, so a quiet fortnight is normal. 30 days matches the org
+  # `deps.updates_flowing` standard's window.
+  MAX_QUIET_DAYS: "30"
 
 jobs:
   health-check:
@@ -81,4 +86,84 @@ jobs:
 
       - name: Fail the run if unhealthy
         if: steps.probe.outputs.failed == '1'
+        run: exit 1
+
+  # Renovate keeps dependencies fresh, but nothing noticed when Renovate itself
+  # stopped (it never started: the app was never granted this repo, so no PR and
+  # no Dependency Dashboard issue ever appeared — see issue #25). Same
+  # open/refresh/auto-resolve triage as the health check above, applied to the
+  # automation instead of the site.
+  dependency-freshness:
+    name: Dependency automation freshness
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read # search/issues returns Renovate's PRs too
+    steps:
+      - name: Look for recent Renovate activity
+        id: probe
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # One search covers both PRs and issues, so a repo that is genuinely
+          # up to date still looks alive via its Dependency Dashboard issue.
+          latest=$(gh api -X GET search/issues \
+            -f q="repo:${REPO} author:app/renovate" \
+            -f sort=updated -f order=desc -f per_page=1 \
+            --jq '.items[0].updated_at // empty')
+          if [ -z "$latest" ]; then
+            stale=1
+            detail="No Renovate-authored pull request or issue has **ever** existed in this repository — the app is most likely not installed or not granted access to it."
+          else
+            age=$(( ( $(date -u +%s) - $(date -u -d "$latest" +%s) ) / 86400 ))
+            detail="Most recent Renovate activity: \`${latest}\` (${age} day(s) ago; threshold ${MAX_QUIET_DAYS})."
+            if [ "$age" -gt "$MAX_QUIET_DAYS" ]; then stale=1; else stale=0; fi
+          fi
+          echo "$detail"
+          {
+            echo "stale=${stale}"
+            echo "detail=${detail}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open incident issue when automation is silent
+        if: steps.probe.outputs.stale == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DETAIL: ${{ steps.probe.outputs.detail }}
+        run: |
+          set -euo pipefail
+          gh label create "$INCIDENT_LABEL" -R "$REPO" -c FBCA04 -d "Automated incident from scheduled maintenance" 2>/dev/null || true
+          existing=$(gh issue list -R "$REPO" --state open --label "$INCIDENT_LABEL" \
+            --search "in:title $DEPS_INCIDENT_TITLE" --json number --jq '.[0].number // empty')
+          # Refresh nothing if it is already open — the body says everything and a
+          # daily comment would just bury it.
+          if [ -n "$existing" ]; then
+            echo "Incident #${existing} already open; leaving it alone."
+            exit 0
+          fi
+          body=$(printf '%s\n\nDependency updates are not flowing. Renovate config is committed at `renovate.json5`, so this is about whether Renovate reaches the repo and whether its PRs can merge themselves — both repository settings, see the operator checklist in #25.\n\nThis issue closes itself once Renovate activity reappears.\n\nRun: %s' "$DETAIL" "$RUN_URL")
+          gh issue create -R "$REPO" --title "$DEPS_INCIDENT_TITLE" --label "$INCIDENT_LABEL" --body "$body"
+
+      - name: Auto-resolve incident issue when updates are flowing again
+        if: steps.probe.outputs.stale == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DETAIL: ${{ steps.probe.outputs.detail }}
+        run: |
+          set -euo pipefail
+          gh issue list -R "$REPO" --state open --label "$INCIDENT_LABEL" \
+            --search "in:title $DEPS_INCIDENT_TITLE" --json number --jq '.[].number' | while read -r n; do
+            [ -n "$n" ] || continue
+            gh issue comment "$n" -R "$REPO" --body "Dependency automation is alive again. ${DETAIL} Closing."
+            gh issue close "$n" -R "$REPO" --reason completed
+          done
+
+      - name: Fail the run if automation is silent
+        if: steps.probe.outputs.stale == '1'
         run: exit 1

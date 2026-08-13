@@ -1,6 +1,14 @@
 // Renovate config — service repo (single `main` branch, deploys infra via gitops).
 // Adapted from the org's canonical service template (ai-cc-tools) for a Node repo:
 // npm manager instead of pep621, same commit-prefix -> release conventions.
+//
+// This file only describes WHAT Renovate should do. Whether it runs at all, and
+// whether its PRs can merge themselves, depends on three repository settings an
+// operator owns (issue #25, and CLAUDE.md > "Dependency updates"):
+//   1. the hosted Renovate GitHub App installed with access to this repo,
+//   2. "Allow auto-merge" enabled in repo settings (platformAutomerge below),
+//   3. the `main` ruleset not demanding a code-owner review a bot cannot give.
+// `.github/workflows/maintenance.yaml` alarms if Renovate goes silent anyway.
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
 
@@ -12,9 +20,23 @@
   "schedule": ["before 11:59pm on Sunday"],
   "timezone": "America/Los_Angeles",
   "platformAutomerge": true,
-  "automergeStrategy": "merge-commit",
+  // Squash, not merge-commit: `main` history is squash-only and semantic-release
+  // reads the squashed subject. A merge commit lands as "Merge pull request #N
+  // from renovate/...", which parses as no release type -- every `fix(deps):`
+  // security bump would silently stop cutting a release.
+  "automergeStrategy": "squash",
   "rangeStrategy": "auto",
   "rebaseWhen": "behind-base-branch",
+
+  // The Dependency Dashboard issue is this repo's liveness beacon for Renovate:
+  // if that issue does not exist, Renovate is not reaching the repo at all
+  // (a config error is reported there and nowhere else). The freshness probe in
+  // .github/workflows/maintenance.yaml checks for exactly this.
+  "dependencyDashboard": true,
+
+  // Source vulnerability alerts from OSV as well as GitHub's, so security PRs
+  // still flow if Dependabot alerts are ever off in repo settings.
+  "osvVulnerabilityAlerts": true,
 
   "enabledManagers": [
     "npm",
