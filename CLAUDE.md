@@ -91,27 +91,50 @@ bumps are for advisories it cannot resolve on its own. Config lives at the repo
 root and maps update types onto the commit prefixes above, so a security patch
 cuts a release and a dev-dep bump does not.
 
-Three things outside this repo have to be true for that to work, and none of
-them are visible in the config — if updates stop, check these before editing
-`renovate.json5`:
+### Something has to actually run Renovate
 
-1. **The hosted Renovate app has access to the repo.** Its liveness beacon is
-   the **Dependency Dashboard** issue: Renovate opens one on its first run and
-   reports config errors *only* there. No dashboard issue ⇒ Renovate is not
-   reaching the repo at all.
+`renovate.json5` only describes *what* to update. Two things can execute it, and
+**either one is sufficient** — they are alternatives, not layers:
+
+| Path | Lives where | Switched on by |
+| --- | --- | --- |
+| **Hosted Renovate GitHub App** | github.com marketplace install | granting the app access to this repo (repo-admin) |
+| **Self-hosted** (`.github/workflows/renovate.yaml`) | this repo's own CI | setting a `RENOVATE_TOKEN` repo secret |
+
+Both read the same committed `renovate.json5` — do not add a second config.
+The self-hosted workflow **ships inert**: with no `RENOVATE_TOKEN` it reports
+why and exits without doing anything, and it **stands down automatically** if
+the hosted app has been active in the last `HOSTED_APP_GRACE_DAYS` (14), so
+turning both on does not produce duplicate PRs.
+
+### Conditions outside the config
+
+None of these are visible in `renovate.json5` — if updates stop, check them
+before editing it:
+
+1. **Renovate is running at all.** The hosted app's liveness beacon is the
+   **Dependency Dashboard** issue: it opens one on its first run and reports
+   config errors *only* there. No dashboard issue ⇒ the app is not reaching the
+   repo. For the self-hosted path the beacon is the workflow's own run log.
 2. **"Allow auto-merge" and squash merging are enabled** in repo settings.
    `platformAutomerge` needs the former; `automergeStrategy: "squash"` needs the
    latter, and squash is what keeps the `fix(deps):` subject on `main` where
    `semantic-release` can read it (a merge commit would hide it).
-3. **The `main` ruleset does not demand a review `renovate[bot]` cannot give.**
+3. **The `main` ruleset does not demand a review the bot cannot give.**
    `require_code_owner_review` + `CODEOWNERS = * @svange` holds every Renovate PR
-   for an approval no bot can obtain, so automerge never completes.
+   for an approval it cannot obtain, so automerge never completes. This applies
+   to both paths — self-hosting changes who *runs* Renovate, not who may approve
+   its PRs.
 
 Those are all operator-side settings — tracked in issue #25 with the exact steps.
 The `Dependency automation freshness` job in `.github/workflows/maintenance.yaml`
 watches for the failure mode: no Renovate PR or issue activity in
 `MAX_QUIET_DAYS` (30) opens an incident issue, and it auto-closes when updates
-flow again.
+flow again. It probes for **both** paths (`author:app/renovate` for the hosted
+app, the `renovate` label for self-hosted PRs, which author as the token's user).
+That job is the honest alarm and it fails while updates are not flowing — the
+`renovate.yaml` workflow never fails on a skip, because a workflow that no-ops
+is not evidence of freshness.
 
 ## Standard workflow to ship a change
 

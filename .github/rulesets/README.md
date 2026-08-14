@@ -5,9 +5,13 @@ ruleset that CLAUDE.md refers to ("Enforcement lives in a default-branch
 ruleset, not just the workflow"). It requires:
 
 - the five PR gate checks as **required status checks** — `Code quality`,
-  `Security`, `Compliance`, `Build validation`, `Tests` (strict / up-to-date);
-- **code-owner review** (`.github/CODEOWNERS`), 1 approval, stale reviews
-  dismissed on push;
+  `Security`, `Compliance`, `Build validation`, `Tests`
+  (`strict_required_status_checks_policy: false` — a branch does not have to be
+  up to date with `main` to merge);
+- **code-owner review** (`.github/CODEOWNERS`) with
+  `required_approving_review_count: 0`, stale reviews dismissed on push. This is
+  the rule that decides whether a Renovate PR can merge itself — see CLAUDE.md
+  › Dependency updates and issue #25;
 - no branch deletion and no force-push on `main`.
 
 ## Applying it
