@@ -1,0 +1,144 @@
+name: Renovate (self-hosted)
+
+# Second execution path for dependency updates.
+#
+# `renovate.json5` describes WHAT to update, but something has to actually RUN
+# Renovate against this repo. There are exactly two ways to do that:
+#
+#   1. the hosted Renovate GitHub App — install/grant is a repo-admin action
+#      that cannot be performed from a checkout (tracked in #25);
+#   2. this workflow — self-hosted Renovate, running in this repo's own CI.
+#
+# Path 1 has been unavailable since `renovate.json5` landed on 2026-07-20: the
+# app has never opened a PR or a Dependency Dashboard issue here, which is the
+# org `deps.updates_flowing` finding. This workflow gives the operator a second
+# way to switch updates on, one that only needs a repository secret rather than
+# a marketplace install.
+#
+# It reads the SAME committed `renovate.json5` — no second source of truth. The
+# schedule, automerge strategy, commit prefixes and package rules all come from
+# that file whichever path runs.
+#
+# SHIPS INERT. With no `RENOVATE_TOKEN` secret set, the preflight step reports
+# why and the run ends without doing anything, so merging this is safe before
+# the operator acts. Turning it on is one secret — see #28 for the exact token
+# scopes and the one-off verification run.
+#
+# It also STANDS DOWN if the hosted app is alive, so enabling both does not
+# produce duplicate PRs. Whichever path the operator picks, the other yields.
+#
+# NOTE: this workflow is not a merge gate and never fails the build when it
+# skips. The honest alarm for "updates are not flowing" stays where it was —
+# the `Dependency automation freshness` job in `maintenance.yaml`, which does
+# fail, and which now recognises activity from either path.
+
+on:
+  schedule:
+    # Twice daily. Renovate enforces its own `schedule` from renovate.json5
+    # (weekly, plus "at any time" for vulnerability alerts), so most of these
+    # runs are deliberate no-ops — they exist so a security advisory is picked
+    # up within hours rather than waiting for the weekly window.
+    - cron: "17 3,15 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Ignore renovate.json5's schedule and update everything due now"
+        type: boolean
+        default: false
+      logLevel:
+        description: "Renovate log level"
+        type: choice
+        options: [info, debug]
+        default: info
+
+# Renovate pushes branches and opens PRs with RENOVATE_TOKEN, not GITHUB_TOKEN.
+# The workflow token only needs to read, for the preflight probe below.
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+env:
+  # If the hosted app has been active more recently than this, it owns
+  # dependency updates and this workflow stands down.
+  HOSTED_APP_GRACE_DAYS: "14"
+
+jobs:
+  renovate:
+    name: Renovate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preflight — is there a token, and is the hosted app already doing this?
+        id: preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          # Secrets cannot be referenced in a job-level `if:`, so the presence
+          # test is done here and gates the run step instead.
+          HAS_TOKEN: ${{ secrets.RENOVATE_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          run=true
+          if [ "$HAS_TOKEN" != "true" ]; then
+            run=false
+            reason="No \`RENOVATE_TOKEN\` secret is set, so self-hosted Renovate is off. This workflow ships inert on purpose — see #28 for how to switch it on (or #25 to install the hosted app instead)."
+          else
+            # The hosted app authors as `app/renovate`; this workflow authors as
+            # the token's user. Only the former means path 1 is live.
+            latest=$(gh api -X GET search/issues \
+              -f q="repo:${REPO} author:app/renovate" \
+              -f sort=updated -f order=desc -f per_page=1 \
+              --jq '.items[0].updated_at // empty')
+            if [ -n "$latest" ]; then
+              age=$(( ( $(date -u +%s) - $(date -u -d "$latest" +%s) ) / 86400 ))
+              if [ "$age" -le "$HOSTED_APP_GRACE_DAYS" ]; then
+                run=false
+                reason="The hosted Renovate app is active (last activity \`${latest}\`, ${age} day(s) ago). Standing down so the two do not open duplicate PRs. Remove the \`RENOVATE_TOKEN\` secret to retire this workflow for good."
+              fi
+            fi
+          fi
+          if [ "$run" = "true" ]; then
+            reason="Running self-hosted Renovate against \`${REPO}\` using the committed \`renovate.json5\`."
+          fi
+          echo "$reason"
+          {
+            echo "run=${run}"
+            echo "reason=${reason}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run Renovate
+        if: steps.preflight.outputs.run == 'true'
+        uses: renovatebot/github-action@e09d604f8f803bb527bd8321ed5be06c460b8682 # v46.2.2
+        with:
+          token: ${{ secrets.RENOVATE_TOKEN }}
+        env:
+          # Only this repo. Without this, a token with broader reach would make
+          # Renovate autodiscover and open PRs on every repo it can see.
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_AUTODISCOVER: "false"
+          # `renovate.json5` is the REPO config and Renovate finds it on its
+          # own. Deliberately not passed as `configurationFile:` — that input is
+          # for the self-hosted *global* config, and feeding a repo config in
+          # there would apply packageRules as global settings.
+          RENOVATE_ONBOARDING: "false"
+          RENOVATE_REQUIRE_CONFIG: "required"
+          RENOVATE_GIT_AUTHOR: "Renovate Bot <bot@renovateapp.com>"
+          # Renovate parses RENOVATE_FORCE as JSON, so the un-forced value has
+          # to be a valid empty object rather than an empty string. `force` is
+          # only ever true on a manual dispatch; scheduled runs stay inside the
+          # weekly window declared in renovate.json5.
+          RENOVATE_FORCE: ${{ inputs.force && '{"schedule":null}' || '{}' }}
+          LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
+
+      - name: Explain what this run did
+        if: always()
+        run: |
+          {
+            echo "### Renovate (self-hosted)"
+            echo
+            echo "${{ steps.preflight.outputs.reason }}"
+          } >> "$GITHUB_STEP_SUMMARY"

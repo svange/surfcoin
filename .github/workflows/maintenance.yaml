@@ -93,6 +93,11 @@ jobs:
   # no Dependency Dashboard issue ever appeared — see issue #25). Same
   # open/refresh/auto-resolve triage as the health check above, applied to the
   # automation instead of the site.
+  #
+  # This is the honest alarm for `deps.updates_flowing`, and it stays failing
+  # until updates actually flow. `.github/workflows/renovate.yaml` deliberately
+  # does NOT fail when it is inert — a workflow that skips is not evidence of
+  # freshness, so the alarm lives here and reads real Renovate activity instead.
   dependency-freshness:
     name: Dependency automation freshness
     runs-on: ubuntu-latest
@@ -108,18 +113,41 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          # One search covers both PRs and issues, so a repo that is genuinely
-          # up to date still looks alive via its Dependency Dashboard issue.
-          latest=$(gh api -X GET search/issues \
-            -f q="repo:${REPO} author:app/renovate" \
-            -f sort=updated -f order=desc -f per_page=1 \
-            --jq '.items[0].updated_at // empty')
+          # Searching issues *and* PRs in one query means a repo that is
+          # genuinely up to date still looks alive via its Dependency Dashboard
+          # issue, instead of false-alarming on a quiet fortnight.
+          #
+          # Two probes, because Renovate can reach this repo two ways and they
+          # author differently:
+          #   - the hosted GitHub App authors as `app/renovate`;
+          #   - self-hosted Renovate (.github/workflows/renovate.yaml) authors
+          #     as the RENOVATE_TOKEN user, so it is recognised by the
+          #     `renovate` label that renovate.json5 puts on every PR.
+          # Either one flowing means dependency updates are flowing.
+          probe() {
+            gh api -X GET search/issues \
+              -f q="repo:${REPO} $1" \
+              -f sort=updated -f order=desc -f per_page=1 \
+              --jq '.items[0].updated_at // empty'
+          }
+          hosted=$(probe "author:app/renovate")
+          selfhosted=$(probe "label:renovate")
+          latest=""
+          via=""
+          for candidate in "hosted:${hosted}" "self-hosted:${selfhosted}"; do
+            value="${candidate#*:}"
+            [ -n "$value" ] || continue
+            if [ -z "$latest" ] || [ "$(date -u -d "$value" +%s)" -gt "$(date -u -d "$latest" +%s)" ]; then
+              latest="$value"
+              via="${candidate%%:*}"
+            fi
+          done
           if [ -z "$latest" ]; then
             stale=1
-            detail="No Renovate-authored pull request or issue has **ever** existed in this repository — the app is most likely not installed or not granted access to it."
+            detail="No Renovate pull request or issue has **ever** existed in this repository — neither the hosted app (no \`app/renovate\` activity) nor the self-hosted workflow (no \`renovate\`-labelled PR) has run. Most likely the app is not granted access to the repo *and* no \`RENOVATE_TOKEN\` secret is set."
           else
             age=$(( ( $(date -u +%s) - $(date -u -d "$latest" +%s) ) / 86400 ))
-            detail="Most recent Renovate activity: \`${latest}\` (${age} day(s) ago; threshold ${MAX_QUIET_DAYS})."
+            detail="Most recent Renovate activity (${via}): \`${latest}\` (${age} day(s) ago; threshold ${MAX_QUIET_DAYS})."
             if [ "$age" -gt "$MAX_QUIET_DAYS" ]; then stale=1; else stale=0; fi
           fi
           echo "$detail"
@@ -146,7 +174,7 @@ jobs:
             echo "Incident #${existing} already open; leaving it alone."
             exit 0
           fi
-          body=$(printf '%s\n\nDependency updates are not flowing. Renovate config is committed at `renovate.json5`, so this is about whether Renovate reaches the repo and whether its PRs can merge themselves — both repository settings, see the operator checklist in #25.\n\nThis issue closes itself once Renovate activity reappears.\n\nRun: %s' "$DETAIL" "$RUN_URL")
+          body=$(printf '%s\n\nDependency updates are not flowing. Renovate config is committed at `renovate.json5`, so this is not a config problem — it is about whether Renovate *runs* here at all, and whether its PRs can merge themselves. There are two ways to make it run, either one is enough:\n\n1. grant the hosted **Renovate GitHub App** access to this repo, or\n2. set a **`RENOVATE_TOKEN`** secret, which switches on the self-hosted `.github/workflows/renovate.yaml` (it ships inert without one).\n\nBoth are repository settings. The operator checklist is in #25.\n\nThis issue closes itself once Renovate activity reappears by either route.\n\nRun: %s' "$DETAIL" "$RUN_URL")
           gh issue create -R "$REPO" --title "$DEPS_INCIDENT_TITLE" --label "$INCIDENT_LABEL" --body "$body"
 
       - name: Auto-resolve incident issue when updates are flowing again
